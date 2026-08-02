@@ -21,21 +21,46 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 if [ "$node_ok" = false ]; then
+  # 兜底 1：检查 nvm 已安装的 node（用户可能用 nvm 管理，未进 PATH）
+  for nvm_node in "$HOME"/.nvm/versions/node/*/bin; do
+    if [ -x "$nvm_node/node" ] && "$nvm_node/node" -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)" >/dev/null 2>&1; then
+      export PATH="$nvm_node:$PATH"
+      node_ok=true
+      log "使用 nvm 已安装的 Node：$("$nvm_node/node" -v)"
+      break
+    fi
+  done
+fi
+
+if [ "$node_ok" = false ]; then
   log "未检测到 Node ≥20，使用 fnm 安装..."
   if curl -fsSL https://fnm.vercel.app/install | bash >/dev/null 2>&1; then
     export PATH="${HOME}/.local/share/fnm:$PATH"
     if fnm install --lts >/dev/null 2>&1 && fnm alias lts-latest default >/dev/null 2>&1; then
       export PATH="${HOME}/.local/share/fnm/aliases/default/bin:$PATH"
+      node_ok=true
       log "fnm 安装完成，node/npm 已就绪"
     else
-      log "警告：fnm 安装 Node 失败，继续尝试 npx"
+      log "警告：fnm 安装 Node 失败"
     fi
   else
-    log "警告：fnm 安装脚本失败，继续尝试 npx"
+    log "警告：fnm 安装脚本失败（fnm.vercel.app 可能需要代理访问）"
   fi
 fi
 
-# 2. 拉起 npm 包：npx 失败回退全局安装
+if [ "$node_ok" = false ]; then
+  log "错误：未找到 Node ≥20（fnm 安装失败，国内环境请设置代理后重试，"
+  log "      或手动安装 Node.js ≥20 后重新运行本脚本）"
+  exit 1
+fi
+
+# 2. 拉起 npm 包：AI_STACK_PKG（本地验证/CI 用，未发布时可指 dist/cli.js）→ npx → 全局安装回退
+if [ -n "${AI_STACK_PKG:-}" ]; then
+  log "AI_STACK_PKG 已设置，使用本地包：$AI_STACK_PKG"
+  node "$AI_STACK_PKG" "$@"
+  exit $?
+fi
+
 log "执行：npx -y ai-stack-installer $*"
 if npx -y ai-stack-installer "$@"; then
   rc=0

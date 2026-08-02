@@ -114,7 +114,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     }
     const opts = parseArgs(argv);
     const manifest = await loadManifest();
-    if (opts.command === 'doctor') return runDoctor(manifest, opts.cn);
+    if (opts.command === 'doctor') return runDoctor(manifest, opts.cn, (await detect()).platform);
     if (opts.command === 'list') return runList(manifest);
     // home 取自 detect()：测试可注入临时目录，不触碰真实用户目录
     const info = await detect();
@@ -164,7 +164,7 @@ async function runInstallDirect(opts: CliOptions, env: CliEnv, manifest: Manifes
   }
   const { written } = await writeConfigFiles(env.platform, false, env.home);
   await writeAliasBlock(env.platform, env.home);
-  const doctorCode = await runDoctor(manifest, cnMode.enabled);
+  const doctorCode = await runDoctor(manifest, cnMode.enabled, env.platform);
   await printFileReport(env.platform, env.home);
   await writeInstalledJson(env.home, written);
   if (doctorCode !== 0) await fail('部分工具未就绪（doctor 结果见上），退出码 1');

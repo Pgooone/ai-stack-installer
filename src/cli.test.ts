@@ -176,7 +176,7 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     expect(mocks.ensurePrereqs.mock.calls[0][0].cnMode).toBe(true);
     expect(mocks.installAgent.mock.calls[0][1].cnMode.enabled).toBe(true);
     expect(mocks.installAgent.mock.calls[0][1].cnMode.registry).toContain('npmmirror');
-    expect(mocks.runDoctor).toHaveBeenCalledWith(expect.anything(), true);
+    expect(mocks.runDoctor).toHaveBeenCalledWith(expect.anything(), true, expect.any(String));
   });
 
   it('install -y：agent 安装失败不中断，doctor 汇总失败 → 退出码 1', async () => {
@@ -223,11 +223,11 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     expect(ctx.cnForced.enabled).toBe(true);
   });
 
-  it('doctor 子命令：只跑 runDoctor（不需要 detect），返回其退出码', async () => {
+  it('doctor 子命令：调 detect 取平台后转交 runDoctor，返回其退出码', async () => {
     mocks.runDoctor.mockResolvedValue(1);
     const code = await main(['doctor']);
     expect(code).toBe(1);
-    expect(mocks.detect).not.toHaveBeenCalled();
+    expect(mocks.detect).toHaveBeenCalled();
     expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
   });
 

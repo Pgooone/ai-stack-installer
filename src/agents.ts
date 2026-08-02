@@ -14,6 +14,8 @@ export interface AgentContext {
 export type InstallResult = 'ok' | 'skipped' | 'failed';
 
 const ERR_TAIL_MAX = 500;
+/** 单次安装命令超时：交互式安装器（如 pi 官方脚本会等用户按键）在 -y/CI 下会无限挂起，超时后降级或记失败 */
+const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** 安装单个工具：已装 → skipped；主通道 → check 通过 → ok；失败有 fallback → 降级 → ok；都失败 → failed */
 export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<InstallResult> {
@@ -29,7 +31,7 @@ export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<I
   const primary = installCmd(tool, ctx.platform, cnMode.enabled);
   if (primary) {
     log(`[${tool.id}] 开始安装`);
-    const r = await exec(primary, { env });
+    const r = await exec(primary, { env, timeout: INSTALL_TIMEOUT_MS });
     if (r.code === 0 && (await stateOf(tool)).installed) {
       ok(`[${tool.id}] 安装成功`);
       return 'ok';
@@ -44,7 +46,7 @@ export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<I
 
   if (tool.fallback) {
     log(`[${tool.id}] 降级安装（fallback）`);
-    const r = await exec(applyNpmMirror(tool.fallback, cnMode.enabled), { env });
+    const r = await exec(applyNpmMirror(tool.fallback, cnMode.enabled), { env, timeout: INSTALL_TIMEOUT_MS });
     if (r.code === 0 && (await stateOf(tool)).installed) {
       ok(`[${tool.id}] 降级安装成功`);
       return 'ok';

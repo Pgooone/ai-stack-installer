@@ -63,7 +63,7 @@ export async function writeConfigFiles(platform: Platform, force = false, home =
       continue;
     }
     if (!force && existsSync(cf.path)) {
-      log(`跳过 ${cf.path}：已存在（-f 强制覆盖）`);
+      log(`跳过 ${cf.path}：已存在（不覆盖已有配置）`);
       continue;
     }
     const content = await readFile(templatePath, 'utf8');

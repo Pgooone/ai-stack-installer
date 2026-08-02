@@ -188,7 +188,7 @@ async function execute(ctx: WizardContext, tools: ToolSpec[], cnMode: CnMode): P
   const { written } = await writeConfigFiles(ctx.platform, false, ctx.home);
   await writeAliasBlock(ctx.platform, ctx.home);
 
-  const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled);
+  const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled, ctx.platform);
   await printFileReport(ctx.platform, ctx.home);
   return { cancelled: false, writtenFiles: written, doctorCode };
 }

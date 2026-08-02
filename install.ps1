@@ -37,7 +37,13 @@ if (-not $nodeOk) {
   }
 }
 
-# 2. 拉起 npm 包：npx 失败回退全局安装
+# 2. 拉起 npm 包：AI_STACK_PKG（本地验证/CI 用，未发布时可指 dist/cli.js）→ npx → 全局安装回退
+if ($env:AI_STACK_PKG) {
+  Write-Log "AI_STACK_PKG 已设置，使用本地包：$env:AI_STACK_PKG"
+  node $env:AI_STACK_PKG @args
+  exit $LASTEXITCODE
+}
+
 Write-Log "执行：npx -y ai-stack-installer $args"
 npx -y ai-stack-installer @args
 if ($LASTEXITCODE -ne 0) {

@@ -14,9 +14,14 @@ export function installedFile(home: string): string {
   return join(aiStackDir(home), 'installed.json');
 }
 
-/** install 成功后写入记录（覆盖旧记录） */
+/**
+ * install 成功后写入记录（与旧记录累计合并：幂等重跑时本次可能 0 写入，
+ * 若直接覆盖会把先前记录清空，导致 uninstall 漏删配置——卸载完整性依赖此合并）
+ */
 export async function writeInstalledJson(home: string, files: string[]): Promise<void> {
-  const record: InstalledRecord = { version: 1, createdAt: new Date().toISOString(), files };
+  const prev = await readInstalledJson(home);
+  const merged = [...new Set([...(prev?.files ?? []), ...files])];
+  const record: InstalledRecord = { version: 1, createdAt: new Date().toISOString(), files: merged };
   const file = installedFile(home);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(record, null, 2)}\n`, 'utf8');

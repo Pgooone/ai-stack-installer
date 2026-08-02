@@ -7,5 +7,5 @@
 - [x] 批次 1：底层模块（types/utils/logger/fs-locations/manifest/detect/proxy）
 - [x] 批次 2：流程模块（prereq/agents/configure/doctor）
 - [x] 批次 3：编排与入口（tui/uninstall/cli/install.sh/install.ps1/manifest.json/installed.json）
-- [ ] 本地验证：Windows 真机 + WSL
-- [ ] 文档收尾：README、.gitignore、npm 发布准备
+- [x] 本地验证：Windows 真机 + WSL（agent 队员执行，发现并修复 6 个问题）
+- [ ] 文档收尾：README、.gitignore、npm 发布准备（README/LICENSE 已就绪，发布待仓库建立）
