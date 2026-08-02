@@ -107,7 +107,12 @@ describe('installAgent（注入 exec mock，不真跑 npm）', () => {
       if (cmd === FALLBACK_CN) return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
-    await expect(installAgent(tool, { platform: 'linux', cnMode: true })).resolves.toBe('ok');
+    await expect(
+      installAgent(tool, {
+        platform: 'linux',
+        cnMode: { enabled: true, registry: 'https://registry.npmmirror.com', proxyHost: '127.0.0.1', proxyPort: 7890 },
+      }),
+    ).resolves.toBe('ok');
     expect(calls).toEqual(['claude --version', PRIMARY_CN, FALLBACK_CN, 'claude --version']);
   });
 

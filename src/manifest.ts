@@ -38,11 +38,12 @@ export async function loadManifest(dir?: string): Promise<Manifest> {
   return parsed;
 }
 
-/** 启动校验：id 唯一、check/bin 非空、每平台至少一条安装命令；失败抛错并附修复信息 */
+/** 启动校验：id 唯一、check/bin 非空、每平台至少一条安装命令；失败抛错并附修复信息
+ * 平台命令校验仅对 agents/optInAgents：prereq（node 等）由专属安装逻辑处理，允许无安装命令 */
 export function validateManifest(m: Manifest): void {
   const errors: string[] = [];
   const seen = new Set<string>();
-  const all = [...(m.prereq ?? []), ...(m.agents ?? [])];
+  const all = [...(m.prereq ?? []), ...(m.agents ?? []), ...(m.optInAgents ?? [])];
 
   for (const tool of all) {
     const label = tool.id || '(缺少 id)';
@@ -59,7 +60,15 @@ export function validateManifest(m: Manifest): void {
     if (!tool.check || tool.check.trim() === '') {
       errors.push(`[${label}] check 为空`);
     }
-    // 每平台至少一条安装命令：linux 需 linux|fallback；windows 需 windows|fallback；macos 缺省回退 linux
+    if (tool.minVersion !== undefined && !/^\d+(\.\d+)*$/.test(tool.minVersion.trim())) {
+      errors.push(`[${label}] minVersion 不是语义化版本：${tool.minVersion}`);
+    }
+  }
+
+  // 每平台至少一条安装命令：linux 需 linux|fallback；windows 需 windows|fallback；macos 缺省回退 linux
+  const needInstall = [...(m.agents ?? []), ...(m.optInAgents ?? [])];
+  for (const tool of needInstall) {
+    const label = tool.id || '(缺少 id)';
     if (!tool.linux && !tool.fallback) {
       errors.push(`[${label}] linux 平台缺少安装命令（linux 或 fallback）`);
     }
@@ -68,9 +77,6 @@ export function validateManifest(m: Manifest): void {
     }
     if (!tool.macos && !tool.linux && !tool.fallback) {
       errors.push(`[${label}] macos 平台缺少安装命令（macos/linux 或 fallback）`);
-    }
-    if (tool.minVersion !== undefined && !/^\d+(\.\d+)*$/.test(tool.minVersion.trim())) {
-      errors.push(`[${label}] minVersion 不是语义化版本：${tool.minVersion}`);
     }
   }
 

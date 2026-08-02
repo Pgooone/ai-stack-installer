@@ -1,7 +1,7 @@
 // 配置写入：settings.json 模板幂等写入、rc 标记块、文件位置清单（依赖：fs-locations, logger）
 // home 注入以便测试；模板目录默认从 __dirname 向上定位（兼容 src/ 与 dist/），可注入覆盖
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -143,4 +143,48 @@ export async function collectFileReport(platform: Platform, home = os.homedir())
     ...configFiles(home).map((cf) => ({ path: cf.path, desc: `配置模板 ${cf.template} 生成` })),
     { path: rcFileFor(platform, home), desc: 'shell 别名/代理函数标记块' },
   ];
+}
+
+/** 输出文件位置清单（透明性：每处写入位置 + 清理方式提示） */
+export async function printFileReport(platform: Platform, home = os.homedir()): Promise<void> {
+  const report = await collectFileReport(platform, home);
+  await log('文件位置清单（uninstall 可清理）：');
+  for (const f of report) {
+    await log(`- ${f.path}（${f.desc}）`);
+  }
+}
+
+export type AliasRemoveAction = 'removed' | 'absent';
+
+export interface AliasRemoveResult {
+  rcFile: string;
+  action: AliasRemoveAction;
+}
+
+/** 移除 rc 标记块（writeAliasBlock 的反向操作）；移除后仅剩空白则删除文件，保留用户原有内容 */
+export async function removeAliasBlock(platform: Platform, home = os.homedir()): Promise<AliasRemoveResult> {
+  const rcFile = rcFileFor(platform, home);
+  let content: string;
+  try {
+    content = await readFile(rcFile, 'utf8');
+  } catch {
+    return { rcFile, action: 'absent' }; // rc 文件不存在，无块可移除
+  }
+  const start = content.indexOf(markers.start);
+  if (start === -1) {
+    return { rcFile, action: 'absent' };
+  }
+  const end = content.indexOf(markers.end, start);
+  const before = content.slice(0, start).replace(/\r?\n+$/, '');
+  const blockTail = end === -1 ? content.slice(start) : content.slice(end + markers.end.length);
+  const after = blockTail.replace(/^\r?\n+/, '');
+  const rest = before + (before && after ? '\n' : '') + after;
+  if (rest.trim() === '') {
+    // 标记块是文件全部内容（脚本创建的文件）→ 整个删除
+    await rm(rcFile, { force: true });
+  } else {
+    await writeFile(rcFile, rest.endsWith('\n') ? rest : `${rest}\n`, 'utf8');
+  }
+  await log(`移除 rc 标记块 ${rcFile}`);
+  return { rcFile, action: 'removed' };
 }

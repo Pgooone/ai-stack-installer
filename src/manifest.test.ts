@@ -104,6 +104,31 @@ describe('validateManifest', () => {
     m.agents[0].macos = undefined; // 有 linux 即可
     expect(() => validateManifest(m)).not.toThrow();
   });
+
+  it('prereq 允许无安装命令（node 由专属逻辑安装，仅 windows 的 pwsh 合法）', () => {
+    const m: Manifest = {
+      prereq: [
+        { id: 'node', bin: 'node', check: 'node -v', minVersion: '20.0.0' },
+        { id: 'pwsh', bin: 'pwsh', check: 'pwsh -v', onlyOnWindows: true, windows: 'winget install --id Microsoft.PowerShell' },
+      ],
+      agents: [
+        { id: 'claude-code', bin: 'claude', check: 'claude --version', linux: 'x', windows: 'x' },
+      ],
+    };
+    expect(() => validateManifest(m)).not.toThrow();
+  });
+
+  it('optInAgents 同样要求每平台安装命令', () => {
+    const m = makeManifest();
+    m.optInAgents = [{ id: 'cc-switch', bin: 'cc-switch', check: 'cc-switch', optIn: true }];
+    expect(() => validateManifest(m)).toThrow(/cc-switch.*linux 平台缺少安装命令/);
+  });
+
+  it('optInAgents 中的重复 id 也被检出', () => {
+    const m = makeManifest();
+    m.optInAgents = [{ ...m.agents[0], id: 'codex', optIn: true }];
+    expect(() => validateManifest(m)).toThrow(/id 重复：codex/);
+  });
 });
 
 describe('loadManifest（fixture 目录注入，不读真实仓库）', () => {

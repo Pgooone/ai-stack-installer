@@ -30,15 +30,17 @@ describe('types（编译期形状 + 运行时枚举）', () => {
     expectTypeOf<ToolSpec>().toHaveProperty('needsProxy').toEqualTypeOf<boolean | undefined>();
     expectTypeOf<ToolSpec>().toHaveProperty('npmMirror').toEqualTypeOf<boolean | undefined>();
     expectTypeOf<ToolSpec>().toHaveProperty('optIn').toEqualTypeOf<boolean | undefined>();
+    expectTypeOf<ToolSpec>().toHaveProperty('onlyOnWindows').toEqualTypeOf<boolean | undefined>();
     expectTypeOf<ToolSpec>().toHaveProperty('linux').toEqualTypeOf<string | undefined>();
     expectTypeOf<ToolSpec>().toHaveProperty('macos').toEqualTypeOf<string | undefined>();
     expectTypeOf<ToolSpec>().toHaveProperty('windows').toEqualTypeOf<string | undefined>();
     expectTypeOf<ToolSpec>().toHaveProperty('fallback').toEqualTypeOf<string | undefined>();
   });
 
-  it('Manifest 由 prereq 与 agents 组成', () => {
+  it('Manifest 由 prereq、agents 与可选 optInAgents 组成', () => {
     expectTypeOf<Manifest>().toHaveProperty('prereq').toEqualTypeOf<ToolSpec[]>();
     expectTypeOf<Manifest>().toHaveProperty('agents').toEqualTypeOf<ToolSpec[]>();
+    expectTypeOf<Manifest>().toHaveProperty('optInAgents').toEqualTypeOf<ToolSpec[] | undefined>();
   });
 
   it('ToolState：installed 必选，version 可选', () => {

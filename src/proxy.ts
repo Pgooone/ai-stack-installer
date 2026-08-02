@@ -70,3 +70,8 @@ export function applyCnMode(mode: CnMode, env: NodeJS.ProcessEnv = process.env):
 export function npmRegistryFor(useCn: boolean): string {
   return useCn ? CN_NPM_REGISTRY : DEFAULT_NPM_REGISTRY;
 }
+
+/** 构造标准 cn 模式对象：registry 与 enabled 一致，代理默认 127.0.0.1:7890 */
+export function defaultCnMode(enabled: boolean): CnMode {
+  return { enabled, registry: npmRegistryFor(enabled), proxyHost: PROXY_HOST, proxyPort: PROXY_PORTS[0] };
+}

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   collectFileReport,
   rcFileFor,
+  removeAliasBlock,
   setConfigDirForTest,
   writeAliasBlock,
   writeConfigFiles,
@@ -142,6 +143,74 @@ describe('writeAliasBlock（标记块幂等）', () => {
     );
     expect(rcFileFor('linux', home)).toBe(join(home, '.bashrc'));
     expect(rcFileFor('macos', home)).toBe(join(home, '.bashrc'));
+  });
+});
+
+describe('removeAliasBlock（writeAliasBlock 的反向操作）', () => {
+  let tmpRoot: string;
+  let home: string;
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(os.tmpdir(), 'ai-stack-rmalias-'));
+    home = join(tmpRoot, 'home');
+    setLoggerHome(tmpRoot);
+  });
+
+  afterEach(async () => {
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('移除标记块，用户原有内容保留', async () => {
+    const rc = join(home, '.bashrc');
+    await mkdir(home, { recursive: true });
+    await writeFile(rc, 'export EDITOR=vim\n# >>> ai-stack >>>\nalias c=\'claude\'\n# <<< ai-stack <<<\n');
+    const r = await removeAliasBlock('linux', home);
+    expect(r.action).toBe('removed');
+    const content = await readFile(rc, 'utf8');
+    expect(content).toBe('export EDITOR=vim\n');
+    expect(content).not.toContain('ai-stack');
+  });
+
+  it('标记块在中间：移除后前后内容拼接', async () => {
+    const rc = join(home, '.bashrc');
+    await mkdir(home, { recursive: true });
+    await writeFile(rc, 'A\n# >>> ai-stack >>>\nx\n# <<< ai-stack <<<\nB\n');
+    await removeAliasBlock('linux', home);
+    const content = await readFile(rc, 'utf8');
+    expect(content).toBe('A\nB\n');
+  });
+
+  it('rc 只有标记块（脚本创建）：整个文件删除', async () => {
+    const rc = join(home, '.bashrc');
+    await mkdir(home, { recursive: true });
+    await writeFile(rc, '# >>> ai-stack >>>\nalias c=\'claude\'\n# <<< ai-stack <<<\n');
+    await removeAliasBlock('linux', home);
+    await expect(readFile(rc, 'utf8')).rejects.toThrow();
+  });
+
+  it('无标记块 → absent，文件原样保留', async () => {
+    const rc = join(home, '.bashrc');
+    await mkdir(home, { recursive: true });
+    await writeFile(rc, 'export EDITOR=vim\n');
+    const r = await removeAliasBlock('linux', home);
+    expect(r.action).toBe('absent');
+    await expect(readFile(rc, 'utf8')).resolves.toBe('export EDITOR=vim\n');
+  });
+
+  it('rc 文件不存在 → absent，不报错', async () => {
+    const r = await removeAliasBlock('linux', home);
+    expect(r.action).toBe('absent');
+  });
+
+  it('windows 平台移除 Profile 中的 PowerShell 标记块', async () => {
+    const rc = win32.join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1');
+    await mkdir(win32.dirname(rc), { recursive: true });
+    await writeFile(rc, '# >>> ai-stack >>>\nSet-Alias -Name c -Value claude\n# <<< ai-stack <<<\n');
+    const r = await removeAliasBlock('windows', home);
+    expect(r.rcFile).toBe(rc);
+    expect(r.action).toBe('removed');
+    // 内容只有标记块（脚本创建的文件）→ 整个删除
+    await expect(readFile(rc, 'utf8')).rejects.toThrow();
   });
 });
 

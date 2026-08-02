@@ -50,7 +50,8 @@ function runExec(cmd: string, opts: ExecOptions = {}): Promise<ExecResult> {
     } else {
       child = spawn('bash', ['-c', cmd], spawnOpts);
     }
-    child.unref(); // 不阻塞宿主事件循环
+    // 注意：不能 unref()——unref 会连带 unref stdio handles，stdout 数据不再保持事件循环存活，
+    // 子进程输出到达前的空窗期宿主进程会退出，await 的 promise 永不 settle（Node 报 unsettled top-level await）
 
     if (opts.timeout && opts.timeout > 0) {
       const timer = setTimeout(() => {

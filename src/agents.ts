@@ -1,13 +1,14 @@
-// 工具安装：已装跳过 → 主通道 → fallback 降级 → 失败记录；卸载（依赖：manifest, utils, logger）
+// 工具安装：已装跳过 → 主通道 → fallback 降级 → 失败记录；卸载（依赖：manifest, proxy, utils, logger）
 import { fail, log, ok } from './logger.js';
 import { applyNpmMirror, installCmd, stateOf } from './manifest.js';
+import { applyCnMode, defaultCnMode, type CnMode } from './proxy.js';
 import type { Platform, ToolSpec } from './types.js';
 import { exec } from './utils.js';
 
 export interface AgentContext {
   platform: Platform;
-  /** cn 模式：npm 安装命令自动加 npmmirror registry */
-  cnMode?: boolean;
+  /** cn 模式：npm 安装命令自动加 npmmirror registry，安装命令执行注入 HTTP_PROXY 等 env */
+  cnMode?: CnMode;
 }
 
 export type InstallResult = 'ok' | 'skipped' | 'failed';
@@ -22,11 +23,13 @@ export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<I
     return 'skipped';
   }
 
-  const cnMode = ctx.cnMode ?? false;
-  const primary = installCmd(tool, ctx.platform, cnMode);
+  const cnMode = ctx.cnMode ?? defaultCnMode(false);
+  // cn 模式注入 HTTP_PROXY/HTTPS_PROXY/npm_config_registry，供 needsProxy 的官方安装器走代理
+  const env = applyCnMode(cnMode);
+  const primary = installCmd(tool, ctx.platform, cnMode.enabled);
   if (primary) {
     log(`[${tool.id}] 开始安装`);
-    const r = await exec(primary);
+    const r = await exec(primary, { env });
     if (r.code === 0 && (await stateOf(tool)).installed) {
       ok(`[${tool.id}] 安装成功`);
       return 'ok';
@@ -41,7 +44,7 @@ export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<I
 
   if (tool.fallback) {
     log(`[${tool.id}] 降级安装（fallback）`);
-    const r = await exec(applyNpmMirror(tool.fallback, cnMode));
+    const r = await exec(applyNpmMirror(tool.fallback, cnMode.enabled), { env });
     if (r.code === 0 && (await stateOf(tool)).installed) {
       ok(`[${tool.id}] 降级安装成功`);
       return 'ok';

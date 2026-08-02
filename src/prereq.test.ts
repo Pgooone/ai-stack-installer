@@ -160,3 +160,53 @@ describe('ensurePrereqs（注入 exec mock + 临时 home，不真跑 fnm/winget/
     expect(calls).toContain('git --version');
   });
 });
+
+describe('ensurePrereqs（onlyOnWindows：非 Windows 平台跳过）', () => {
+  let tmpRoot: string;
+  let home: string;
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(os.tmpdir(), 'ai-stack-prereq-win-'));
+    home = join(tmpRoot, 'home');
+    setLoggerHome(tmpRoot);
+  });
+
+  afterEach(async () => {
+    setExecForTest(undefined);
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  const manifestWithPwsh: Manifest = {
+    prereq: [
+      { id: 'node', bin: 'node', check: 'node -v', minVersion: '20.0.0' },
+      { id: 'pwsh', bin: 'pwsh', check: 'pwsh -v', onlyOnWindows: true, windows: 'winget install --id Microsoft.PowerShell -e --silent' },
+    ],
+    agents: [],
+  };
+
+  it('linux 平台：pwsh 直接视为满足，不做任何探测', async () => {
+    const calls: string[] = [];
+    setExecForTest(async (cmd) => {
+      calls.push(cmd);
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePrereqs({ manifest: manifestWithPwsh, platform: 'linux', home });
+    expect(r.failed).toEqual([]);
+    expect(calls).toEqual(['node -v']); // pwsh 未被探测
+  });
+
+  it('windows 平台：pwsh 正常检查，未装则按命令安装', async () => {
+    const calls: string[] = [];
+    setExecForTest(async (cmd) => {
+      calls.push(cmd);
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') return { code: 127, stdout: '', stderr: 'not found' };
+      if (cmd === 'winget install --id Microsoft.PowerShell -e --silent') return { code: 0, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePrereqs({ manifest: manifestWithPwsh, platform: 'windows', home });
+    expect(r.failed).toEqual([]);
+    expect(calls).toContain('winget install --id Microsoft.PowerShell -e --silent');
+  });
+});

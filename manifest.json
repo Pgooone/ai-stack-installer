@@ -1,0 +1,33 @@
+{
+  "prereq": [
+    { "id": "node", "bin": "node", "check": "node -v", "minVersion": "20.0.0" },
+    { "id": "git", "bin": "git", "check": "git --version",
+      "linux": "sudo apt-get install -y git", "macos": "brew install git",
+      "windows": "winget install --id Git.Git -e --silent --accept-source-agreements --accept-package-agreements" },
+    { "id": "pwsh", "bin": "pwsh", "check": "pwsh -v", "onlyOnWindows": true,
+      "windows": "winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements" }
+  ],
+  "agents": [
+    { "id": "claude-code", "bin": "claude", "check": "claude --version", "needsProxy": true,
+      "linux": "curl -fsSL https://claude.ai/install.sh | bash", "windows": "irm https://claude.ai/install.ps1 | iex",
+      "fallback": "npm i -g @anthropic-ai/claude-code", "uninstall": "npm uninstall -g @anthropic-ai/claude-code" },
+    { "id": "codex", "bin": "codex", "check": "codex --version", "needsProxy": true,
+      "linux": "curl -fsSL https://chatgpt.com/codex/install.sh | sh", "windows": "irm https://chatgpt.com/codex/install.ps1 | iex",
+      "fallback": "npm i -g @openai/codex", "uninstall": "npm uninstall -g @openai/codex" },
+    { "id": "pi", "bin": "pi", "check": "pi --version", "npmMirror": true,
+      "linux": "curl -fsSL https://pi.dev/install.sh | sh", "windows": "npm i -g --ignore-scripts @earendil-works/pi-coding-agent",
+      "fallback": "npm i -g --ignore-scripts @earendil-works/pi-coding-agent",
+      "uninstall": "npm uninstall -g @earendil-works/pi-coding-agent" },
+    { "id": "opencode", "bin": "opencode", "check": "opencode --version", "npmMirror": true,
+      "linux": "curl -fsSL https://opencode.ai/install | bash", "windows": "npm i -g opencode-ai",
+      "fallback": "npm i -g opencode-ai", "uninstall": "npm uninstall -g opencode-ai" }
+  ],
+  "optInAgents": [
+    { "id": "cc-switch", "bin": "cc-switch", "check": "winget list --id farion1231.CC-Switch --exact", "needsProxy": true, "optIn": true,
+      "windows": "winget install --id farion1231.CC-Switch --exact --silent --accept-source-agreements --accept-package-agreements",
+      "fallback": "powershell -NoProfile -Command \"$u='https://github.com/farion1231/cc-switch/releases/latest/download/CC-Switch-Windows.msi'; $o=\"$env:TEMP\\cc-switch.msi\"; Invoke-WebRequest -Uri $u -OutFile $o; msiexec /i $o /quiet\"",
+      "linux": "curl -fsSL https://github.com/farion1231/cc-switch/releases/latest/download/CC-Switch-linux-x86_64.AppImage -o ~/cc-switch.AppImage && chmod +x ~/cc-switch.AppImage",
+      "macos": "brew install --cask cc-switch",
+      "uninstallWindows": "winget uninstall --id farion1231.CC-Switch --exact" }
+  ]
+}

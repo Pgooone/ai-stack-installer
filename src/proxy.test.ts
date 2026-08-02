@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { applyCnMode, detectLocalProxy, npmRegistryFor, setConnectForTest } from './proxy.js';
+import { applyCnMode, defaultCnMode, detectLocalProxy, npmRegistryFor, setConnectForTest } from './proxy.js';
 import type { CnMode } from './proxy.js';
 
 const cnMode: CnMode = {
@@ -85,5 +85,25 @@ describe('npmRegistryFor', () => {
   it('cn 模式 → npmmirror，直连 → npmjs.org', () => {
     expect(npmRegistryFor(true)).toBe('https://registry.npmmirror.com');
     expect(npmRegistryFor(false)).toBe('https://registry.npmjs.org');
+  });
+});
+
+describe('defaultCnMode', () => {
+  it('启用：registry 为 npmmirror，代理默认 127.0.0.1:7890', () => {
+    expect(defaultCnMode(true)).toEqual({
+      enabled: true,
+      registry: 'https://registry.npmmirror.com',
+      proxyHost: '127.0.0.1',
+      proxyPort: 7890,
+    });
+  });
+
+  it('禁用：registry 为 npmjs.org 且 enabled=false', () => {
+    expect(defaultCnMode(false)).toEqual({
+      enabled: false,
+      registry: 'https://registry.npmjs.org',
+      proxyHost: '127.0.0.1',
+      proxyPort: 7890,
+    });
   });
 });

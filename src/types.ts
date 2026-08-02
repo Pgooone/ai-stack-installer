@@ -17,6 +17,7 @@ export interface ToolSpec {
   needsProxy?: boolean; // 官方安装器直连海外，必须代理
   npmMirror?: boolean; // 纯 npm 安装，可走 npmmirror
   optIn?: boolean; // CC Switch 等默认不装的可选工具
+  onlyOnWindows?: boolean; // 仅 Windows 平台需要的前置依赖（如 pwsh）
   linux?: string; // 各平台安装命令（POSIX shell）
   macos?: string; // 缺省回退 linux
   windows?: string; // PowerShell 命令
@@ -28,6 +29,8 @@ export interface ToolSpec {
 export interface Manifest {
   prereq: ToolSpec[];
   agents: ToolSpec[];
+  /** 默认不装的可选工具（如 CC Switch），向导询问后才安装 */
+  optInAgents?: ToolSpec[];
 }
 
 export type InstallStatus = 'ok' | 'skipped' | 'failed' | 'missing';

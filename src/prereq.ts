@@ -46,6 +46,11 @@ export async function ensurePrereqs(ctx: PrereqContext): Promise<PrereqResult> {
 }
 
 async function ensureOne(tool: ToolSpec, ctx: PrereqContext): Promise<boolean> {
+  // onlyOnWindows 的依赖（如 pwsh）在非 Windows 平台直接视为满足
+  if (tool.onlyOnWindows === true && ctx.platform !== 'windows') {
+    log(`跳过 ${tool.id}：仅 Windows 平台需要`);
+    return true;
+  }
   const state = await stateOf(tool);
   if (state.installed) return true;
   if (tool.id === 'node') return installNode(ctx);

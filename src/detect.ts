@@ -36,7 +36,7 @@ export async function detectNode(): Promise<ToolState> {
   return stateOf({ id: 'node', bin: 'node', check: 'node -v', minVersion: '20.0.0' });
 }
 
-/** 批量探测 prereq + agents（optIn 工具也包含在 agents 内） */
+/** 批量探测 prereq + agents + optInAgents（list 用；agent 内 optIn 标记兼容旧 manifest） */
 export async function detectTools(m: Manifest): Promise<ToolState[]> {
-  return Promise.all([...m.prereq, ...m.agents].map((tool) => stateOf(tool)));
+  return Promise.all([...m.prereq, ...m.agents, ...(m.optInAgents ?? [])].map((tool) => stateOf(tool)));
 }
