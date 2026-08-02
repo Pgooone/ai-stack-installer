@@ -1,0 +1,8 @@
+# Codex 配置文件骨架（由 ai-stack-installer 生成）
+# 本文件不含任何密钥，请按需在此补充你的配置。
+# 示例：
+#   model = "gpt-5"
+#   [model_providers.my_provider]
+#   name = "My Provider"
+#   base_url = "https://api.example.com/v1"
+#   env_key = "MY_PROVIDER_API_KEY"

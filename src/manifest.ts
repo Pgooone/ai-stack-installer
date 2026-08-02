@@ -87,7 +87,19 @@ export function getPrereq(m: Manifest, id: string): ToolSpec | undefined {
   return m.prereq.find((t) => t.id === id);
 }
 
-/** 按平台选安装命令；cn 模式下 npm 命令自动加镜像 registry（命令已含 --registry= 时不重复注入） */
+/** cn 模式下 npm 命令自动加镜像 registry（命令已含 --registry= 时不重复注入）；非 npm 命令原样返回 */
+export function applyNpmMirror(cmd: string, cnMode: boolean): string {
+  if (cnMode && isNpmCommand(cmd) && !cmd.includes('--registry=')) {
+    return `${cmd} --registry=${CN_NPM_REGISTRY}`;
+  }
+  return cmd;
+}
+
+function isNpmCommand(cmd: string): boolean {
+  return /^\s*npm(?:\s|$)/.test(cmd);
+}
+
+/** 按平台选安装命令；cn 模式下 npm 命令自动加镜像 registry */
 export function installCmd(tool: ToolSpec, platform: Platform, cnMode = false): string | undefined {
   let cmd: string | undefined;
   if (platform === 'windows') {
@@ -98,14 +110,7 @@ export function installCmd(tool: ToolSpec, platform: Platform, cnMode = false): 
     cmd = tool.linux;
   }
   if (!cmd) return undefined;
-  if (cnMode && isNpmCommand(cmd) && !cmd.includes('--registry=')) {
-    return `${cmd} --registry=${CN_NPM_REGISTRY}`;
-  }
-  return cmd;
-}
-
-function isNpmCommand(cmd: string): boolean {
-  return /^\s*npm(?:\s|$)/.test(cmd);
+  return applyNpmMirror(cmd, cnMode);
 }
 
 /** 跑 check 取首行版本；失败/超时视为未装；minVersion 不满足同样视为未装 */
