@@ -10,7 +10,7 @@ import { fail, log } from './logger.js';
 import { getAgent, loadManifest } from './manifest.js';
 import { ensurePrereqs } from './prereq.js';
 import { defaultCnMode } from './proxy.js';
-import { runWizard } from './tui.js';
+import { executeUpdate, runWizard } from './tui.js';
 import type { Manifest, Platform } from './types.js';
 import { runUninstall } from './uninstall.js';
 import { updatePrereqs } from './update.js';
@@ -138,6 +138,23 @@ async function runInstall(opts: CliOptions, env: CliEnv, manifest: Manifest): Pr
 // ---- update：更新系统组件（node/git/pwsh 升级到最新），cn 模式下注入镜像/代理 ----
 
 async function runUpdate(env: CliEnv, manifest: Manifest, cn: boolean): Promise<number> {
+  if (detectTty()) {
+    // 交互：先检测可用更新 → 多选 → 只更新选中的
+    const cnMode = cn ? defaultCnMode(true) : defaultCnMode(false);
+    const result = await executeUpdate(
+      {
+        manifest,
+        platform: env.platform,
+        home: env.home,
+        states: await detectTools(manifest),
+        cnForced: cn ? cnMode : undefined,
+      },
+      cnMode,
+    );
+    if (result.cancelled) return 130;
+    return result.doctorCode;
+  }
+  // 非交互（管道/CI/-y 场景）：全部更新
   const result = await updatePrereqs({ manifest, platform: env.platform, home: env.home, cnMode: cn });
   if (result.failed.length > 0) await fail(`更新失败：${result.failed.join(', ')}`);
   const code = await runDoctor(manifest, cn, env.platform);

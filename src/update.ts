@@ -1,4 +1,4 @@
-// 系统组件更新：逐个 prereq 执行 upgrade 命令（升级到最新），执行后复查 stateOf（依赖：manifest, utils, logger）
+// 系统组件更新：检测可用更新 → 逐个 prereq 执行 upgrade 命令，执行后复查 stateOf（依赖：manifest, utils, logger）
 import { fail, log, ok } from './logger.js';
 import { stateOf } from './manifest.js';
 import type { Manifest, Platform, ToolSpec } from './types.js';
@@ -17,10 +17,50 @@ export interface UpdateResult {
   skipped: string[];
 }
 
-/** 逐个 prereq 执行 upgrade：无 upgrade 命令或平台不适用跳过；单个失败不中断 */
-export async function updatePrereqs(ctx: UpdateContext): Promise<UpdateResult> {
+/** 可用更新检测结果：hasUpdate=true 有可用更新 / false 已是最新 / undefined 无法检测（默认勾选） */
+export interface UpdateCheck {
+  tool: ToolSpec;
+  current?: string;
+  hasUpdate: boolean | undefined;
+}
+
+/** winget upgrade --dry-run：退出码 0 = 有可用升级，0x8A150019（非 0）= 已是最新 */
+const WINGET_DRY_RUN =
+  (id: string) => `winget upgrade --id ${id} --dry-run --accept-source-agreements --accept-package-agreements`;
+
+/**
+ * 检测各组件是否有可用更新（交互前呈现给用户选择）。
+ * Windows 用 winget --dry-run 退出码判断；其他平台/无 upgrade 命令标记「无法检测」
+ */
+export async function detectUpdates(ctx: UpdateContext): Promise<UpdateCheck[]> {
+  const out: UpdateCheck[] = [];
+  for (const tool of ctx.manifest.prereq) {
+    if (tool.onlyOnWindows === true && ctx.platform !== 'windows') continue;
+    const current = (await stateOf(tool)).version;
+    if (!upgradeCmd(tool, ctx.platform)) {
+      out.push({ tool, current, hasUpdate: undefined }); // 无升级命令，不参与更新
+      continue;
+    }
+    if (ctx.platform !== 'windows' || !tool.upgradeWindows && !tool.upgrade) {
+      out.push({ tool, current, hasUpdate: undefined }); // 非 Windows 平台检测机制暂缺
+      continue;
+    }
+    const id = /--id (\S+)/.exec(upgradeCmd(tool, ctx.platform)!)?.[1];
+    if (!id) {
+      out.push({ tool, current, hasUpdate: undefined });
+      continue;
+    }
+    const r = await exec(WINGET_DRY_RUN(id));
+    out.push({ tool, current, hasUpdate: r.code === 0 });
+  }
+  return out;
+}
+
+/** 逐个 prereq 执行 upgrade：无 upgrade 命令或平台不适用跳过；单个失败不中断；only 限定只更新选中项 */
+export async function updatePrereqs(ctx: UpdateContext, only?: string[]): Promise<UpdateResult> {
   const result: UpdateResult = { updated: [], failed: [], skipped: [] };
   for (const tool of ctx.manifest.prereq) {
+    if (only && !only.includes(tool.id)) continue;
     if (tool.onlyOnWindows === true && ctx.platform !== 'windows') {
       result.skipped.push(tool.id);
       continue;

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLoggerHome } from './logger.js';
 import type { Manifest } from './types.js';
-import { updatePrereqs } from './update.js';
+import { detectUpdates, updatePrereqs } from './update.js';
 import { setExecForTest } from './utils.js';
 
 function makeManifest(): Manifest {
@@ -154,5 +154,74 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
     const r = await updatePrereqs({ manifest: makeManifest(), platform: 'windows', home });
     expect(r.updated).toEqual(['node', 'pwsh']);
     expect(r.failed).toEqual([]);
+  });
+
+  it('only 限定：只更新选中的组件', async () => {
+    const calls: string[] = [];
+    setExecForTest(async (cmd) => {
+      calls.push(cmd);
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await updatePrereqs({ manifest: makeManifest(), platform: 'linux', home }, ['node']);
+    expect(r.updated).toEqual(['node']);
+    expect(calls).not.toContain('winget upgrade --id Microsoft.PowerShell'); // pwsh 未被选中不执行
+  });
+});
+
+describe('detectUpdates（winget --dry-run 退出码判断可用更新）', () => {
+  let home: string;
+  let tmpRoot: string;
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(os.tmpdir(), 'ai-stack-det-'));
+    home = join(tmpRoot, 'home');
+    setLoggerHome(tmpRoot);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(async () => {
+    setExecForTest(undefined);
+    vi.restoreAllMocks();
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('windows：dry-run 退出码 0 → 有更新；非 0（无可用升级）→ 已最新', async () => {
+    // 与产品 manifest 一致的 fixture：node 补 upgradeWindows（含 --id 语法）；pwsh 已有；git 无升级命令
+    const m = makeManifest();
+    m.prereq = [
+      { ...m.prereq[0], upgradeWindows: 'winget upgrade --id OpenJS.NodeJS.LTS -e --silent' },
+      m.prereq[1],
+      m.prereq[2],
+    ];
+    setExecForTest(async (cmd) => {
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      if (cmd === 'winget upgrade --id OpenJS.NodeJS.LTS --dry-run --accept-source-agreements --accept-package-agreements')
+        return { code: 0, stdout: '可用的升级', stderr: '' }; // 有更新
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements')
+        return { code: -1978335189, stdout: '找不到可用的升级', stderr: '' }; // 已最新
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await detectUpdates({ manifest: m, platform: 'windows', home });
+    const node = r.find((c) => c.tool.id === 'node');
+    const pwsh = r.find((c) => c.tool.id === 'pwsh');
+    const git = r.find((c) => c.tool.id === 'git');
+    expect(node?.hasUpdate).toBe(true);
+    expect(pwsh?.hasUpdate).toBe(false);
+    expect(git?.hasUpdate).toBeUndefined(); // 无升级命令 → 无法检测
+  });
+
+  it('非 windows 平台：检测机制暂缺 → hasUpdate undefined', async () => {
+    setExecForTest(async (cmd) => {
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await detectUpdates({ manifest: makeManifest(), platform: 'linux', home });
+    expect(r.every((c) => c.hasUpdate === undefined)).toBe(true);
   });
 });

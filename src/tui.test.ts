@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     installAgent: vi.fn(),
     ensurePrereqs: vi.fn(),
     updatePrereqs: vi.fn(),
+    detectUpdates: vi.fn(),
     runDoctor: vi.fn(),
     writeConfigFiles: vi.fn(),
     writeAliasBlock: vi.fn(),
@@ -49,7 +50,7 @@ vi.mock('./proxy.js', async (importOriginal) => {
 });
 vi.mock('./agents.js', () => ({ installAgent: mocks.installAgent }));
 vi.mock('./prereq.js', () => ({ ensurePrereqs: mocks.ensurePrereqs }));
-vi.mock('./update.js', () => ({ updatePrereqs: mocks.updatePrereqs }));
+vi.mock('./update.js', () => ({ updatePrereqs: mocks.updatePrereqs, detectUpdates: mocks.detectUpdates }));
 vi.mock('./doctor.js', () => ({ runDoctor: mocks.runDoctor }));
 vi.mock('./configure.js', () => ({
   writeConfigFiles: mocks.writeConfigFiles,
@@ -97,6 +98,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     mocks.installAgent.mockReset();
     mocks.ensurePrereqs.mockReset();
     mocks.updatePrereqs.mockReset();
+    mocks.detectUpdates.mockReset();
     mocks.runDoctor.mockReset();
     mocks.writeConfigFiles.mockReset();
     mocks.writeAliasBlock.mockReset();
@@ -104,6 +106,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     mocks.detectLocalProxy.mockResolvedValue(null);
     mocks.ensurePrereqs.mockResolvedValue({ failed: [] });
     mocks.updatePrereqs.mockResolvedValue({ updated: [], failed: [], skipped: [] });
+    mocks.detectUpdates.mockResolvedValue([]);
     mocks.installAgent.mockResolvedValue('ok');
     mocks.runDoctor.mockResolvedValue(0);
     mocks.writeConfigFiles.mockResolvedValue({
@@ -287,17 +290,36 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(result).toEqual({ cancelled: true, writtenFiles: [], installedTools: [], doctorCode: 0 });
   });
 
-  it('功能选择「更新系统组件」：只更新不装 Agent，跳过工具多选/cc-switch/汇总', async () => {
+  it('功能选择「更新系统组件」：先检测 → 多选要更新的 → 只更新选中项', async () => {
     mocks.select.mockResolvedValueOnce('update'); // ① 功能选择 → 更新
     mocks.select.mockResolvedValueOnce('direct'); // ② 网络
-    mocks.updatePrereqs.mockResolvedValueOnce({ updated: ['pwsh'], failed: [], skipped: [] });
+    mocks.detectUpdates.mockResolvedValueOnce([
+      { tool: { id: 'node' }, current: 'v20.0.0', hasUpdate: true },
+      { tool: { id: 'pwsh' }, current: '7.6.4', hasUpdate: false },
+    ] as never);
+    mocks.multiselect.mockResolvedValueOnce(['node']); // 只选 node（pwsh 已最新不预选）
+    mocks.updatePrereqs.mockResolvedValueOnce({ updated: ['node'], failed: [], skipped: [] });
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
-    expect(mocks.multiselect).not.toHaveBeenCalled();
     expect(mocks.confirm).not.toHaveBeenCalled();
+    // 检测结果呈现：多选文案含状态标记
+    const msCall = mocks.multiselect.mock.calls[0][0];
+    expect(msCall.message).toContain('选择要更新的系统组件');
+    expect(msCall.initialValues).toEqual(['node']); // 已最新的 pwsh 不预选
+    // 只更新选中的
     expect(mocks.updatePrereqs).toHaveBeenCalledTimes(1);
+    expect(mocks.updatePrereqs.mock.calls[0][1]).toEqual(['node']);
     expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
     expect(mocks.printFileReport).toHaveBeenCalledTimes(1);
     expect(result.cancelled).toBe(false);
+  });
+
+  it('功能选择「更新系统组件」且多选被取消 → cancelled', async () => {
+    mocks.select.mockResolvedValueOnce('update'); // ① 功能选择 → 更新
+    mocks.select.mockResolvedValueOnce('direct'); // ② 网络
+    mocks.detectUpdates.mockResolvedValueOnce([]);
+    mocks.multiselect.mockResolvedValueOnce(mocks.CANCEL);
+    const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
+    expect(result).toEqual({ cancelled: true, writtenFiles: [], installedTools: [], doctorCode: 0 });
   });
 
   it('功能选择「全部执行」：先更新组件，再走安装流程', async () => {

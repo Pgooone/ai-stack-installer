@@ -8,7 +8,7 @@ import { configFiles } from './fs-locations.js';
 import { log } from './logger.js';
 import { ensurePrereqs } from './prereq.js';
 import { defaultCnMode, detectLocalProxy, type CnMode } from './proxy.js';
-import { updatePrereqs } from './update.js';
+import { detectUpdates, updatePrereqs } from './update.js';
 import type { Manifest, Platform, ToolSpec, ToolState } from './types.js';
 
 export interface WizardContext {
@@ -77,16 +77,41 @@ async function askAction(): Promise<WizardAction> {
   return { cancelled: false, mode: (choice as 'install' | 'update' | 'all') ?? 'install' };
 }
 
-/** 仅更新系统组件：updatePrereqs → doctor + 文件清单 */
-async function executeUpdate(ctx: WizardContext, cnMode: CnMode): Promise<WizardResult> {
+/** 仅更新系统组件：先检测可用更新 → 多选要更新的 → 执行 → doctor + 文件清单 */
+export async function executeUpdate(ctx: WizardContext, cnMode: CnMode): Promise<WizardResult> {
   const spin = spinner();
-  spin.start('更新系统组件');
-  const pre = await updatePrereqs({
+  spin.start('检测系统组件可用更新');
+  const checks = await detectUpdates({
     manifest: ctx.manifest,
     platform: ctx.platform,
     home: ctx.home,
     cnMode: cnMode.enabled,
   });
+  spin.stop('检测完成');
+
+  const options = checks.map((c) => {
+    const tag = c.hasUpdate === true ? '⚠ 有可用更新' : c.hasUpdate === false ? '· 已是最新' : '· 无法检测';
+    return { value: c.tool.id, label: `${c.tool.id}（当前 ${c.current ?? '未知'}）${tag}` };
+  });
+  // 预选有更新的与无法检测的；已最新的不预选
+  const initialValues = checks.filter((c) => c.hasUpdate !== false).map((c) => c.tool.id);
+  const picked = await multiselect({
+    message: '选择要更新的系统组件（空格切换 · 回车确认）',
+    options,
+    initialValues,
+  });
+  if (isCancel(picked)) return cancelledResult();
+
+  spin.start('更新系统组件');
+  const pre = await updatePrereqs(
+    {
+      manifest: ctx.manifest,
+      platform: ctx.platform,
+      home: ctx.home,
+      cnMode: cnMode.enabled,
+    },
+    picked as string[],
+  );
   spin.stop(pre.failed.length === 0 ? '系统组件更新完成' : `更新失败：${pre.failed.join(', ')}`);
   const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled, ctx.platform);
   await printFileReport(ctx.platform, ctx.home);
