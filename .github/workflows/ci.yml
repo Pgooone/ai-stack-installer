@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint
+
+      # 真机冒烟：全新建环境真实跑入口脚本（AI_STACK_PKG 走本地包，发布前验证路径）
+      # 会真实安装 4 个 Agent（Claude Code/Codex/Pi/OpenCode）；doctor 退出码非 0 即失败
+      - name: Smoke — Linux/macOS（install.sh）
+        if: runner.os != 'Windows'
+        env:
+          AI_STACK_PKG: ${{ github.workspace }}/dist/cli.js
+        run: |
+          bash install.sh -y
+          node dist/cli.js doctor
+
+      - name: Smoke — Windows（install.ps1）
+        if: runner.os == 'Windows'
+        env:
+          AI_STACK_PKG: ${{ github.workspace }}\dist\cli.js
+        shell: pwsh
+        run: |
+          .\install.ps1 -y
+          node dist\cli.js doctor
+          node dist\cli.js list
