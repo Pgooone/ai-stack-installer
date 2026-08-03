@@ -1,6 +1,6 @@
 {
   "name": "ai-stack-installer",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "跨平台 AI Agent 一键安装脚本",
   "private": false,
   "type": "module",
