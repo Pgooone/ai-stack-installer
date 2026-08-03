@@ -41,15 +41,23 @@ iwr -useb https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/inst
   ○ 全部执行（先更新组件，再安装 Agent）
 ```
 
-也可用 `ai-stack update` 子命令直接更新系统组件（非交互）：
+也可用 `ai-stack update` 子命令更新系统组件（交互模式会先检测可用更新再让你选择）：
 
 ```bash
-ai-stack update        # 更新 Node / Git / PowerShell 到最新
+ai-stack update        # 交互：检测 → 勾选要更新的组件
+ai-stack update -y     # 非交互：全部更新
 ai-stack update --cn   # 走镜像/代理更新
 ```
 
 > 注意：Windows 上部分组件升级（如 Git/PowerShell）需要管理员权限；
 > 「无可用升级」会正常提示不算失败。
+
+### PowerShell 7 集成（Windows）
+
+安装/更新 PowerShell 后脚本自动执行（幂等）：
+- 把 PowerShell 7 路径（`C:\Program Files\PowerShell\7`）提升到**用户 PATH 首位**——确保新终端默认调用 pwsh 7 而非旧版
+- 若安装了 Windows Terminal，将其 `defaultProfile` 设为 PowerShell 7（保留你已有的配置与注释）
+- pwsh profile 写入 UTF-8 编码设置（防中文乱码）
 
 ## 参数
 

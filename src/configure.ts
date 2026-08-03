@@ -88,6 +88,10 @@ function aliasBlock(platform: Platform): string {
   const body =
     platform === 'windows'
       ? [
+          '# 强制 UTF-8 编码（避免中文乱码）',
+          "$OutputEncoding = [System.Text.Encoding]::UTF8",
+          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
+          "[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
           "Set-Alias -Name c -Value claude",
           'function proxy_on {',
           "  $env:http_proxy = 'http://127.0.0.1:7890'",

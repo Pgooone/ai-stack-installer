@@ -10,6 +10,7 @@ import { fail, log } from './logger.js';
 import { getAgent, loadManifest } from './manifest.js';
 import { ensurePrereqs } from './prereq.js';
 import { defaultCnMode } from './proxy.js';
+import { ensurePwshIntegration } from './pwsh-setup.js';
 import { executeUpdate, runWizard } from './tui.js';
 import type { Manifest, Platform } from './types.js';
 import { runUninstall } from './uninstall.js';
@@ -157,6 +158,7 @@ async function runUpdate(env: CliEnv, manifest: Manifest, cn: boolean): Promise<
   // 非交互（管道/CI/-y 场景）：全部更新
   const result = await updatePrereqs({ manifest, platform: env.platform, home: env.home, cnMode: cn });
   if (result.failed.length > 0) await fail(`更新失败：${result.failed.join(', ')}`);
+  await ensurePwshIntegration(env.platform); // Windows：pwsh 升级后 PATH 首位 + 终端默认
   const code = await runDoctor(manifest, cn, env.platform);
   return result.failed.length > 0 || code !== 0 ? 1 : 0;
 }
@@ -174,6 +176,7 @@ async function runInstallWizard(opts: CliOptions, env: CliEnv, manifest: Manifes
   });
   if (result.cancelled) return 130; // clack cancel（Ctrl+C）
   await writeInstalledJson(env.home, await hashFiles(result.writtenFiles), result.installedTools);
+  await ensurePwshIntegration(env.platform); // Windows：pwsh PATH 首位 + 终端默认（幂等）
   if (result.doctorCode !== 0) await fail('部分工具未就绪（doctor 结果见上），退出码 1');
   return result.doctorCode;
 }
@@ -204,6 +207,7 @@ async function runInstallDirect(opts: CliOptions, env: CliEnv, manifest: Manifes
   }
   const { written } = await writeConfigFiles(env.platform, false, env.home);
   await writeAliasBlock(env.platform, env.home);
+  await ensurePwshIntegration(env.platform); // Windows：pwsh PATH 首位 + 终端默认（幂等）
   const doctorCode = await runDoctor(manifest, cnMode.enabled, env.platform);
   await printFileReport(env.platform, env.home);
   await writeInstalledJson(env.home, await hashFiles(written), installedTools);
