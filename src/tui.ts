@@ -34,7 +34,7 @@ type ExecOutcome = 'ok' | 'skipped' | 'aborted' | 'cancelled';
 
 /** 向导：①功能选择 → ②网络 → ③工具多选 → ④cc-switch → ⑤汇总 → ⑥执行+⑦报告 */
 export async function runWizard(ctx: WizardContext): Promise<WizardResult> {
-  const action = await askAction(ctx); // ① 功能选择
+  const action = await askAction(); // ① 功能选择
   if (action.cancelled) return cancelledResult();
   if (action.mode === 'update') {
     // 仅更新系统组件：网络确认 → 执行更新 → doctor + 文件清单
@@ -62,7 +62,7 @@ export async function runWizard(ctx: WizardContext): Promise<WizardResult> {
 
 type WizardAction = { cancelled: boolean; mode: 'install' | 'update' | 'all' };
 
-async function askAction(_ctx: WizardContext): Promise<WizardAction> {
+async function askAction(): Promise<WizardAction> {
   const choice = await select({
     message: '选择要执行的操作',
     options: [
