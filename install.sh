@@ -133,18 +133,19 @@ if [ "$node_ok" = false ]; then
   exit 1
 fi
 
-# 2. 选择 npm registry：已有代理（环境变量）→ 官方源可达用官方；否则探测 npmjs.org，
-#    不可达（国内无代理）→ npmmirror 镜像，保证核心包能拉下来
+# 2. 选择 npm registry：有代理（环境变量）→ 官方源；无代理（国内常见）→ npmmirror 首选，
+#    避免 /-/ping 假阳性（ping 通但下载被墙）；npmmirror 不可达（海外无代理）回退官方
 pick_registry() {
   if [ -n "${http_proxy:-}${HTTP_PROXY:-}${https_proxy:-}${HTTPS_PROXY:-}" ]; then
     echo "https://registry.npmjs.org"
     return
   fi
-  if curl -fsSL --max-time 5 -o /dev/null https://registry.npmjs.org/-/ping 2>/dev/null; then
-    echo "https://registry.npmjs.org"
-  else
-    log "npmjs.org 不可达，使用 npmmirror 镜像源"
+  if curl -fsSL --max-time 5 -o /dev/null https://registry.npmmirror.com/-/ping 2>/dev/null; then
+    # 注意 >&2：本函数 stdout 会被 $(pick_registry) 捕获，日志必须走 stderr
+    log "使用 npmmirror 镜像源（国内首选）" >&2
     echo "https://registry.npmmirror.com"
+  else
+    echo "https://registry.npmjs.org"
   fi
 }
 
@@ -162,14 +163,14 @@ fi
 log "执行：npx -y ai-stack-installer@latest $*"
 if npx -y ai-stack-installer@latest "$@"; then
   rc=0
-elif [ "$REGISTRY" = "https://registry.npmjs.org" ]; then
-  # 官方源失败（可能是网络波动/被墙），切镜像重试一次
-  log "npmjs.org 拉取失败，改用 npmmirror 镜像重试"
-  export npm_config_registry="https://registry.npmmirror.com"
+elif [ "$REGISTRY" = "https://registry.npmmirror.com" ]; then
+  # npmmirror（首选）失败（海外/网络波动），切官方源重试一次
+  log "npmmirror 拉取失败，改用 npmjs 官方源重试"
+  export npm_config_registry="https://registry.npmjs.org"
   if npx -y ai-stack-installer@latest "$@"; then
     rc=0
   else
-    log "npx 执行失败，回退全局安装（镜像）..."
+    log "npx 执行失败，回退全局安装（官方源）..."
     if npm i -g ai-stack-installer@latest >/dev/null 2>&1; then
       log "执行：ai-stack $*"
       ai-stack "$@"
@@ -180,7 +181,7 @@ elif [ "$REGISTRY" = "https://registry.npmjs.org" ]; then
     fi
   fi
 else
-  log "npx 执行失败（镜像源），回退全局安装..."
+  log "npx 执行失败（官方源），回退全局安装..."
   if npm i -g ai-stack-installer@latest >/dev/null 2>&1; then
     log "执行：ai-stack $*"
     ai-stack "$@"

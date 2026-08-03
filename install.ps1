@@ -37,15 +37,16 @@ if (-not $nodeOk) {
   }
 }
 
-# 2. 选择 npm registry：已有代理（环境变量）→ 官方源；否则探测 npmjs.org，
-#    不可达（国内无代理）→ npmmirror 镜像，保证核心包能拉下来
+# 2. 选择 npm registry：有代理（环境变量）→ 官方源；无代理（国内常见）→ npmmirror 首选，
+#    避免 /-/ping 假阳性（ping 通但下载被墙）；npmmirror 不可达（海外无代理）回退官方
 $registry = 'https://registry.npmjs.org'
 if (-not $env:http_proxy -and -not $env:HTTP_PROXY -and -not $env:https_proxy -and -not $env:HTTPS_PROXY) {
   try {
-    Invoke-WebRequest -Uri 'https://registry.npmjs.org/-/ping' -TimeoutSec 5 -UseBasicParsing | Out-Null
-  } catch {
-    Write-Log 'npmjs.org 不可达，使用 npmmirror 镜像源'
+    Invoke-WebRequest -Uri 'https://registry.npmmirror.com/-/ping' -TimeoutSec 5 -UseBasicParsing | Out-Null
+    Write-Log '使用 npmmirror 镜像源（国内首选）'
     $registry = 'https://registry.npmmirror.com'
+  } catch {
+    Write-Log 'npmmirror 不可达，回退 npmjs 官方源'
   }
 }
 Write-Log "npm registry: $registry"
@@ -60,10 +61,10 @@ if ($env:AI_STACK_PKG) {
 
 Write-Log "执行：npx -y ai-stack-installer@latest $args"
 npx -y ai-stack-installer@latest @args
-if ($LASTEXITCODE -ne 0 -and $registry -eq 'https://registry.npmjs.org') {
-  # 官方源失败（网络波动/被墙），切镜像重试一次
-  Write-Log 'npmjs.org 拉取失败，改用 npmmirror 镜像重试'
-  $env:npm_config_registry = 'https://registry.npmmirror.com'
+if ($LASTEXITCODE -ne 0 -and $registry -eq 'https://registry.npmmirror.com') {
+  # npmmirror（首选）失败（海外/网络波动），切官方源重试一次
+  Write-Log 'npmmirror 拉取失败，改用 npmjs 官方源重试'
+  $env:npm_config_registry = 'https://registry.npmjs.org'
   npx -y ai-stack-installer@latest @args
 }
 if ($LASTEXITCODE -ne 0) {

@@ -334,6 +334,14 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     expect(spy.mock.calls.some((c) => String(c[0]).includes('用法'))).toBe(true);
   });
 
+  it('--version：输出横幅版本号并退出 0（不被当作未知参数）', async () => {
+    const spy = vi.mocked(console.log);
+    spy.mockClear();
+    const code = await main(['--version']);
+    expect(code).toBe(0);
+    expect(spy.mock.calls.some((c) => String(c[0]).startsWith('ai-stack v'))).toBe(true);
+  });
+
   it('参数解析错误：红字输出错误并返回 1', async () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const code = await main(['-p', 'huge']);

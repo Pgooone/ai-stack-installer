@@ -129,6 +129,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       console.log(USAGE);
       return 0;
     }
+    if (argv.includes('--version')) {
+      return 0; // 版本号已由入口横幅输出（ai-stack vX.Y.Z），--version 直接成功退出
+    }
     const opts = parseArgs(argv);
     if (opts.command === 'self-update') return runSelfUpdate();
     const manifest = await loadManifest();

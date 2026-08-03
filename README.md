@@ -22,8 +22,12 @@ iwr -useb https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/inst
 
 > 入口脚本只负责「装 Node ≥20 + 拉起 npm 包」，安装逻辑在 `ai-stack-installer` 包内。
 >
-> **国内网络自动适配**：入口脚本会先探测 npmjs.org 是否可达——不可达（无代理）时自动使用
-> npmmirror 镜像拉取核心包；拉取失败也会自动镜像重试。已有代理环境变量时保持官方源。
+> **国内网络自动适配（无代理时国内源首选）**：无代理环境（国内常见）默认使用
+> **npmmirror 镜像**拉取核心包（避免官方源 ping 通但下载被墙的假阳性），失败自动切官方源重试；
+> 已有代理环境变量时保持官方源。
+>
+> **Linux 无 Node 时自动直连安装**：入口脚本会依次尝试 fnm（海外）→ npmmirror 直连下载
+> Node（国内），老系统（glibc<2.28，如 CentOS 7）自动改用官方 glibc-217 兼容构建。
 
 ## 支持的工具
 
@@ -68,7 +72,7 @@ MSI 下载失败时自动降级 winget。需代理访问 GitHub Releases。
 安装/更新 PowerShell 后脚本自动执行（幂等）：
 - 把 PowerShell 7 路径（`C:\Program Files\PowerShell\7`）提升到**用户 PATH 首位**——确保新终端默认调用 pwsh 7 而非旧版
 - 若安装了 Windows Terminal，将其 `defaultProfile` 设为 PowerShell 7（保留你已有的配置与注释）
-- pwsh profile 写入 UTF-8 编码设置（防中文乱码）
+- pwsh profile 写入 alias（`c` = claude）与 proxy_on/off 函数（标记块，可安全卸载）
 
 ## 升级与清缓存
 
@@ -114,6 +118,25 @@ iwr -useb "https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/ins
 - `needsProxy` 工具（Claude Code / Codex / CC Switch 官方安装器）直连海外，**镜像救不了，必须走代理**
 - `npmMirror` 工具（Pi / OpenCode）走 npmmirror 即可
 
+## Linux 系统源（国内无代理）
+
+CentOS 7 已于 2024-06 EOL，官方 mirrorlist（`mirrorlist.centos.org`）已失效，`yum` 需换国内源。
+建议**阿里云主源 + 清华备份**（yum 按 baseurl 顺序自动切换），例如：
+
+```ini
+# /etc/yum.repos.d/CentOS-Base.repo（仅示例 [base]，extras/updates 同理）
+[base]
+name=CentOS-$releasever - Base (aliyun / tsinghua)
+baseurl=http://mirrors.aliyun.com/centos-vault/7.9.2009/os/$basearch/
+        https://mirrors.tuna.tsinghua.edu.cn/centos-vault/7.9.2009/os/$basearch/
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+```
+
+- SCLo（rh-nodejs 等）：`mirrors.aliyun.com/centos-vault/7.9.2009/sclo/$basearch/rh/` + 清华备份
+- EPEL 7：阿里云主源 `mirrors.aliyun.com/epel/7/` + 华为云备份 `mirrors.huaweicloud.com/epel/7/`
+- Debian/Ubuntu 可用清华 `mirrors.tuna.tsinghua.edu.cn` 或阿里 `mirrors.aliyun.com` 对应发行版源
+
 ## 文件位置与清理（透明性）
 
 安装/卸载报告会输出完整文件位置清单：
@@ -128,7 +151,7 @@ iwr -useb "https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/ins
 ## WSL 使用提示
 
 - WSL 默认继承 Windows PATH——若 Windows 侧也装了同款工具（npm 全局等），`command -v` 可能命中 Windows 版本。安装后请确认新终端里 `which claude` 指向 WSL 路径（npm 全局 bin，如 `~/.npm-global/bin` 或 fnm 的 node bin）
-- 脚本自己安装 Node 时（fnm 分支）会自动配置 PATH；手动安装 Node 的需自行把 bin 加入 PATH，否则安装的工具在新终端里可能解析到 Windows 垫片
+- 脚本自己安装 Node 时（fnm 或国内直连分支）会自动配置 PATH 并写入 `~/.bashrc`；手动安装 Node 的需自行把 bin 加入 PATH，否则安装的工具在新终端里可能解析到 Windows 垫片
 
 ## 卸载
 
@@ -144,7 +167,7 @@ ai-stack uninstall -y     # 跳过确认
 ```bash
 npm install
 npm run build      # tsc → dist/
-npm test           # vitest（171+ 用例）
+npm test           # vitest（229 用例）
 npm run lint       # eslint
 ```
 
