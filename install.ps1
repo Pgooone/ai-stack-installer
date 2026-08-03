@@ -58,17 +58,17 @@ if ($env:AI_STACK_PKG) {
   exit $LASTEXITCODE
 }
 
-Write-Log "执行：npx -y ai-stack-installer $args"
-npx -y ai-stack-installer @args
+Write-Log "执行：npx -y ai-stack-installer@latest $args"
+npx -y ai-stack-installer@latest @args
 if ($LASTEXITCODE -ne 0 -and $registry -eq 'https://registry.npmjs.org') {
   # 官方源失败（网络波动/被墙），切镜像重试一次
   Write-Log 'npmjs.org 拉取失败，改用 npmmirror 镜像重试'
   $env:npm_config_registry = 'https://registry.npmmirror.com'
-  npx -y ai-stack-installer @args
+  npx -y ai-stack-installer@latest @args
 }
 if ($LASTEXITCODE -ne 0) {
   Write-Log 'npx 执行失败，回退全局安装...'
-  npm i -g ai-stack-installer
+  npm i -g ai-stack-installer@latest
   if ($LASTEXITCODE -eq 0) {
     Write-Log "执行：ai-stack $args"
     ai-stack @args
