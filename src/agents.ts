@@ -28,7 +28,7 @@ export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<I
   const cnMode = ctx.cnMode ?? defaultCnMode(false);
   // cn 模式注入 HTTP_PROXY/HTTPS_PROXY/npm_config_registry，供 needsProxy 的官方安装器走代理
   const env = applyCnMode(cnMode);
-  const primary = installCmd(tool, ctx.platform, cnMode.enabled);
+  const primary = installCmd(tool, ctx.platform, cnMode.mirror);
   if (primary) {
     log(`[${tool.id}] 开始安装`);
     const r = await exec(primary, { env, timeout: INSTALL_TIMEOUT_MS });
@@ -46,7 +46,7 @@ export async function installAgent(tool: ToolSpec, ctx: AgentContext): Promise<I
 
   if (tool.fallback) {
     log(`[${tool.id}] 降级安装（fallback）`);
-    const r = await exec(applyNpmMirror(tool.fallback, cnMode.enabled), { env, timeout: INSTALL_TIMEOUT_MS });
+    const r = await exec(applyNpmMirror(tool.fallback, cnMode.mirror), { env, timeout: INSTALL_TIMEOUT_MS });
     if (r.code === 0 && (await stateOf(tool)).installed) {
       ok(`[${tool.id}] 降级安装成功`);
       return 'ok';

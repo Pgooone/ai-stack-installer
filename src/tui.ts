@@ -7,7 +7,7 @@ import { runDoctor } from './doctor.js';
 import { configFiles } from './fs-locations.js';
 import { log } from './logger.js';
 import { ensurePrereqs } from './prereq.js';
-import { defaultCnMode, detectLocalProxy, type CnMode } from './proxy.js';
+import { detectProxy, npmRegistryFor, type CnMode, type ProxyInfo } from './proxy.js';
 import { detectUpdates, updatePrereqs } from './update.js';
 import type { Manifest, Platform, ToolSpec, ToolState } from './types.js';
 
@@ -158,36 +158,52 @@ async function selectTools(ctx: WizardContext): Promise<PickResult> {
   return { cancelled: false, tools: candidates.filter((t) => (picked as string[]).includes(t.id)) };
 }
 
-// ---- ② 网络：有本地代理询问启用 cn 模式，无代理提示需自行开启仍可启用 ----
+// ---- ② 网络：检测到代理（系统/环境变量/本地端口）→ 询问是否使用；镜像独立选择 ----
 
 interface NetworkResult {
   cancelled: boolean;
   cnMode: CnMode;
 }
 
+function cnOf(proxy: ProxyInfo | null, mirror: boolean): CnMode {
+  return {
+    enabled: proxy !== null || mirror,
+    mirror,
+    proxy,
+    registry: npmRegistryFor(mirror),
+  };
+}
+
 async function askNetwork(ctx: WizardContext): Promise<NetworkResult> {
   if (ctx.cnForced) return { cancelled: false, cnMode: ctx.cnForced };
-  const proxy = await detectLocalProxy();
+  const proxy = await detectProxy();
   const choice = await select({
     message: proxy
-      ? `检测到本地代理 ${proxy.host}:${proxy.port}，启用 cn 模式（npmmirror 镜像 + 代理）？`
-      : '未检测到本地代理（需自行开启代理），仍可启用 cn 模式？',
-    options: [
-      { value: 'cn', label: '启用 cn 模式（镜像 + 代理）' },
-      { value: 'direct', label: '直连（不启用）' },
-    ],
+      ? `检测到代理 ${proxy.host}:${proxy.port}（系统设置/环境变量/本地端口），是否使用该代理安装？`
+      : '未检测到代理，选择网络模式：',
+    options: proxy
+      ? [
+          { value: 'proxy', label: '使用代理 + npmmirror 镜像（推荐：官方安装器被墙需代理）' },
+          { value: 'proxy-only', label: '仅使用代理（npm 保持官方源）' },
+          { value: 'mirror', label: '不使用代理，仅 npmmirror 镜像' },
+          { value: 'direct', label: '直连（默认源）' },
+        ]
+      : [
+          { value: 'mirror', label: '使用 npmmirror 镜像' },
+          { value: 'direct', label: '直连（默认源）' },
+        ],
   });
-  if (isCancel(choice)) return { cancelled: true, cnMode: defaultCnMode(false) };
-  if (choice !== 'cn') return { cancelled: false, cnMode: defaultCnMode(false) };
-  return {
-    cancelled: false,
-    cnMode: {
-      enabled: true,
-      registry: 'https://registry.npmmirror.com',
-      proxyHost: proxy?.host ?? '127.0.0.1',
-      proxyPort: proxy?.port ?? 7890,
-    },
-  };
+  if (isCancel(choice)) return { cancelled: true, cnMode: cnOf(null, false) };
+  switch (choice) {
+    case 'proxy':
+      return { cancelled: false, cnMode: cnOf(proxy, true) };
+    case 'proxy-only':
+      return { cancelled: false, cnMode: cnOf(proxy, false) };
+    case 'mirror':
+      return { cancelled: false, cnMode: cnOf(null, true) };
+    default:
+      return { cancelled: false, cnMode: cnOf(null, false) };
+  }
 }
 
 // ---- ③ CC Switch（optIn）：已装跳过，未装询问 ----

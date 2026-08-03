@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => {
     })),
     logMessage: vi.fn(),
     isCancel: (v: unknown): boolean => v === CANCEL,
-    detectLocalProxy: vi.fn(),
+    detectProxy: vi.fn(),
     installAgent: vi.fn(),
     ensurePrereqs: vi.fn(),
     updatePrereqs: vi.fn(),
@@ -46,7 +46,7 @@ vi.mock('@clack/prompts', () => ({
 
 vi.mock('./proxy.js', async (importOriginal) => {
   const orig = await importOriginal<typeof import('./proxy.js')>();
-  return { ...orig, detectLocalProxy: mocks.detectLocalProxy };
+  return { ...orig, detectProxy: mocks.detectProxy };
 });
 vi.mock('./agents.js', () => ({ installAgent: mocks.installAgent }));
 vi.mock('./prereq.js', () => ({ ensurePrereqs: mocks.ensurePrereqs }));
@@ -94,7 +94,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     mocks.confirm.mockReset();
     mocks.spinner.mockClear();
     mocks.logMessage.mockReset();
-    mocks.detectLocalProxy.mockReset();
+    mocks.detectProxy.mockReset();
     mocks.installAgent.mockReset();
     mocks.ensurePrereqs.mockReset();
     mocks.updatePrereqs.mockReset();
@@ -103,7 +103,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     mocks.writeConfigFiles.mockReset();
     mocks.writeAliasBlock.mockReset();
     mocks.printFileReport.mockReset();
-    mocks.detectLocalProxy.mockResolvedValue(null);
+    mocks.detectProxy.mockResolvedValue(null);
     mocks.ensurePrereqs.mockResolvedValue({ failed: [] });
     mocks.updatePrereqs.mockResolvedValue({ updated: [], failed: [], skipped: [] });
     mocks.detectUpdates.mockResolvedValue([]);
@@ -124,9 +124,9 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
 
   it('①功能选择+已装置灰+预选未装；②代理检测到→cn；③装 cc-switch；④汇总；⑤安装 codex+cc-switch；⑥doctor+清单', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex']);
-    mocks.detectLocalProxy.mockResolvedValueOnce({ host: '127.0.0.1', port: 7890 });
+    mocks.detectProxy.mockResolvedValueOnce({ host: '127.0.0.1', port: 7890 });
     mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
-    mocks.select.mockResolvedValueOnce('cn'); // ② 网络
+    mocks.select.mockResolvedValueOnce('proxy'); // ② 网络（使用代理+镜像）
     mocks.confirm.mockResolvedValueOnce(true); // ③ cc-switch
     mocks.confirm.mockResolvedValueOnce(true); // ④ 汇总
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
@@ -142,7 +142,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(msCall.initialValues).toEqual(['codex', 'pi']);
 
     // ②：代理检测到 → 询问文案含检测结果
-    expect(mocks.select.mock.calls[1][0].message).toContain('检测到本地代理 127.0.0.1:7890');
+    expect(mocks.select.mock.calls[1][0].message).toContain('检测到代理 127.0.0.1:7890');
 
     // ③④：两次 confirm（cc-switch → 汇总）
     expect(mocks.confirm).toHaveBeenCalledTimes(2);
@@ -187,17 +187,20 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(result.writtenFiles).toEqual([join(home, '.claude', 'settings.json'), join(home, '.codex', 'config.toml')]);
   });
 
-  it('②未检测到代理：提示需自行开代理，仍可选 cn 模式', async () => {
+  it('②未检测到代理：可选 npmmirror 镜像，或直连', async () => {
     mocks.multiselect.mockResolvedValueOnce([]);
-    mocks.detectLocalProxy.mockResolvedValueOnce(null);
+    mocks.detectProxy.mockResolvedValueOnce(null);
     mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
-    mocks.select.mockResolvedValueOnce('cn'); // ② 网络
+    mocks.select.mockResolvedValueOnce('mirror'); // ② 网络（无代理 → 选镜像）
     mocks.confirm.mockResolvedValueOnce(false); // ③ cc-switch 否
     mocks.confirm.mockResolvedValueOnce(true); // ④ 汇总（装 0 个）
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
     expect(result.cancelled).toBe(false);
-    expect(mocks.select.mock.calls[1][0].message).toContain('未检测到本地代理');
-    expect(mocks.select.mock.calls[1][0].message).toContain('仍可启用 cn 模式');
+    expect(mocks.select.mock.calls[1][0].message).toContain('未检测到代理');
+    // 无代理时提供镜像选项
+    const options = mocks.select.mock.calls[1][0].options.map((o: { label: string }) => o.label);
+    expect(options).toContain('使用 npmmirror 镜像');
+    expect(options).toContain('直连（默认源）');
     // 汇总文案：装 0 个
     expect(mocks.confirm.mock.calls[1][0].message).toContain('将安装 0 个工具');
   });
@@ -348,7 +351,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
       cnForced: { enabled: true, registry: 'https://registry.npmmirror.com', proxyHost: '127.0.0.1', proxyPort: 7890 },
     });
     expect(mocks.select).toHaveBeenCalledTimes(1); // 仅功能选择，网络询问被跳过
-    expect(mocks.detectLocalProxy).not.toHaveBeenCalled();
+    expect(mocks.detectProxy).not.toHaveBeenCalled();
     expect(mocks.installAgent.mock.calls[0][1].cnMode.enabled).toBe(true);
     expect(result.cancelled).toBe(false);
   });

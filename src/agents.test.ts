@@ -110,7 +110,7 @@ describe('installAgent（注入 exec mock，不真跑 npm）', () => {
     await expect(
       installAgent(tool, {
         platform: 'linux',
-        cnMode: { enabled: true, registry: 'https://registry.npmmirror.com', proxyHost: '127.0.0.1', proxyPort: 7890 },
+        cnMode: { enabled: true, mirror: true, proxy: { host: '127.0.0.1', port: 7890 }, registry: 'https://registry.npmmirror.com' },
       }),
     ).resolves.toBe('ok');
     expect(calls).toEqual(['claude --version', PRIMARY_CN, FALLBACK_CN, 'claude --version']);
