@@ -49,6 +49,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements') return { code: 0, stdout: '', stderr: '' }; // 检测：有更新，继续升级
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
@@ -66,6 +67,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements') return { code: 0, stdout: '', stderr: '' }; // 检测：有更新，继续升级
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
@@ -99,6 +101,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       if (cmd === 'fnm install --lts') return { code: 1, stdout: '', stderr: 'registry timeout' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements') return { code: 0, stdout: '', stderr: '' }; // 检测：有更新，继续升级
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
@@ -120,6 +123,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements') return { code: 0, stdout: '', stderr: '' }; // 检测：有更新，继续升级
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
@@ -133,6 +137,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements') return { code: 0, stdout: '', stderr: '' }; // 检测：有更新，继续升级
       if (cmd === 'winget upgrade --id Microsoft.PowerShell')
         return { code: -1978335189, stdout: '找不到可用的升级。', stderr: '' }; // 0x8A150019
       throw new Error(`不应执行：${cmd}`);
@@ -155,6 +160,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       if (cmd === 'fnm install --lts') return { code: 1, stdout: '', stderr: 'exit 5' }; // 非 0 但生效
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
+      if (cmd === 'winget upgrade --id Microsoft.PowerShell --dry-run --accept-source-agreements --accept-package-agreements') return { code: 0, stdout: '', stderr: '' }; // 检测：有更新，继续升级
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });

@@ -47,6 +47,11 @@ iwr -useb https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/inst
 也可用 `ai-stack update` 子命令更新系统组件（交互模式会先检测可用更新再让你选择）：
 
 ```bash
+# 推荐：直接拉最新版再更新（避免本地旧版入口脚本/缓存问题）
+npx -y ai-stack-installer@latest update
+```
+
+```bash
 ai-stack update        # 交互：检测 → 勾选要更新的组件
 ai-stack update -y     # 非交互：全部更新
 ai-stack update --cn   # 走镜像/代理更新

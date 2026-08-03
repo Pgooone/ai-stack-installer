@@ -48,34 +48,32 @@ export async function detectUpdates(ctx: UpdateContext): Promise<UpdateCheck[]> 
       out.push({ tool, current, hasUpdate: undefined }); // 无升级命令，不参与更新
       continue;
     }
-    if (ctx.platform !== 'windows' || !tool.upgradeWindows && !tool.upgrade) {
-      out.push({ tool, current, hasUpdate: undefined }); // 非 Windows 平台检测机制暂缺
-      continue;
-    }
-    const cmd = upgradeCmd(tool, ctx.platform)!;
-    // GitHub Releases 类命令（如 pwsh MSI 安装链）：查询 API 最新版与当前比较
-    // 注意仓库名含斜杠（PowerShell/PowerShell），分隔符只能用引号/空白
-    const apiMatch = /https:\/\/api\.github\.com\/repos\/([^'"\s]+)\/releases\/latest/.exec(cmd);
-    if (apiMatch) {
-      const api = `powershell -NoProfile -Command "((Invoke-RestMethod -Uri 'https://api.github.com/repos/${apiMatch[1]}/releases/latest' -Headers @{'User-Agent'='ai-stack-installer'}).tag_name).TrimStart('v')"`;
-      const ar = await exec(api);
-      const latest = ar.code === 0 ? ar.stdout.trim() : '';
-      if (latest && current) {
-        out.push({ tool, current, hasUpdate: !versionGte(current, latest) && current !== latest });
-        continue;
-      }
-      out.push({ tool, current, hasUpdate: undefined }); // API 查询失败 → 无法检测
-      continue;
-    }
-    const id = /--id (\S+)/.exec(cmd)?.[1];
-    if (!id) {
-      out.push({ tool, current, hasUpdate: undefined });
-      continue;
-    }
-    const r = await exec(WINGET_DRY_RUN(id));
-    out.push({ tool, current, hasUpdate: r.code === 0 });
+    out.push({ tool, current, hasUpdate: await checkToolUpdate(tool, ctx.platform, current) });
   }
   return out;
+}
+
+/**
+ * 检测单个已安装工具是否有可用更新（winget dry-run / GitHub API 版本比较）。
+ * 返回 undefined 表示无法检测（保守按有更新处理）。
+ */
+async function checkToolUpdate(tool: ToolSpec, platform: Platform, current?: string): Promise<boolean | undefined> {
+  if (platform !== 'windows' || !tool.upgradeWindows && !tool.upgrade) return undefined;
+  const cmd = upgradeCmd(tool, platform)!;
+  // GitHub Releases 类命令（如 pwsh MSI 安装链）：查询 API 最新版与当前比较
+  // 注意仓库名含斜杠（PowerShell/PowerShell），分隔符只能用引号/空白
+  const apiMatch = /https:\/\/api\.github\.com\/repos\/([^'"\s]+)\/releases\/latest/.exec(cmd);
+  if (apiMatch) {
+    const api = `powershell -NoProfile -Command "((Invoke-RestMethod -Uri 'https://api.github.com/repos/${apiMatch[1]}/releases/latest' -Headers @{'User-Agent'='ai-stack-installer'}).tag_name).TrimStart('v')"`;
+    const ar = await exec(api);
+    const latest = ar.code === 0 ? ar.stdout.trim() : '';
+    if (latest && current) return !versionGte(current, latest) && current !== latest;
+    return undefined; // API 查询失败 → 无法检测
+  }
+  const id = /--id (\S+)/.exec(cmd)?.[1];
+  if (!id) return undefined;
+  const r = await exec(WINGET_DRY_RUN(id));
+  return r.code === 0;
 }
 
 /** 逐个 prereq 执行 upgrade：无 upgrade 命令或平台不适用跳过；单个失败不中断；only 限定只更新选中项 */
@@ -88,6 +86,15 @@ export async function updatePrereqs(ctx: UpdateContext, only?: string[]): Promis
       continue;
     }
     const before = await stateOf(tool);
+    if (before.installed) {
+      // 已安装：先检测是否有更新——已最新则跳过下载（如 pwsh MSI 每次 115MB，避免无谓下载重装）
+      const hasUpdate = await checkToolUpdate(tool, ctx.platform, before.version);
+      if (hasUpdate === false) {
+        log(`更新 ${tool.id}：已是最新（${before.version}），跳过下载`);
+        result.skipped.push(tool.id);
+        continue;
+      }
+    }
     // 未安装 → 用安装命令（winget upgrade 对未安装的包无效会直接失败）；已安装 → upgrade
     const cmd = before.installed
       ? upgradeCmd(tool, ctx.platform)

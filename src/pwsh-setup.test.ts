@@ -129,6 +129,51 @@ describe('ensurePwshIntegration（mock exec + 临时 LOCALAPPDATA）', () => {
     expect(after).toContain('// Windows Terminal 配置'); // 注释保留
   });
 
+  it('用户自定义 pwsh profile（commandline 指向 pwsh + 自定义 GUID）：用实际 GUID 设置', async () => {
+    const pwshDir = 'C:\\Program Files\\PowerShell\\7';
+    const customGuid = '{11111111-2222-3333-4444-555555555555}';
+    const wt = join(tmpRoot, WT_SETTINGS);
+    await mkdir(join(wt, '..'), { recursive: true });
+    await writeFile(
+      wt,
+      `{\n  "profiles": { "list": [ { "guid": "{aaaa}", "name": "cmd" }, { "guid": "${customGuid}", "name": "PowerShell 7", "commandline": "C:\\\\Program Files\\\\PowerShell\\\\7\\\\pwsh.exe" } ] }\n}\n`,
+      'utf8',
+    );
+    setExecForTest(async (cmd) => {
+      if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
+        return { code: 0, stdout: `${pwshDir};C:\\Windows\\system32\n`, stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePwshIntegration('windows');
+    expect(r.terminalDefaultSet).toBe(true);
+    const after = await readFile(wt, 'utf8');
+    expect(after).toContain(`"defaultProfile": "${customGuid}"`); // 用实际 GUID 而非固定值
+  });
+
+  it('Windows Terminal 中无 PowerShell 7 profile：自动添加 profile 并设为默认', async () => {
+    const pwshDir = 'C:\\Program Files\\PowerShell\\7';
+    const wt = join(tmpRoot, WT_SETTINGS);
+    await mkdir(join(wt, '..'), { recursive: true });
+    await writeFile(
+      wt,
+      '{\n  "profiles": { "list": [ { "guid": "{aaaa}", "name": "cmd" } ] }\n}\n',
+      'utf8',
+    );
+    setExecForTest(async (cmd) => {
+      if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
+        return { code: 0, stdout: `${pwshDir};C:\\Windows\\system32\n`, stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePwshIntegration('windows');
+    expect(r.terminalDefaultSet).toBe(true); // 自动添加 + 设为默认
+    const after = await readFile(wt, 'utf8');
+    expect(after).toContain(`"defaultProfile": "${PWSH_GUID}"`);
+    expect(after).toContain('PowerShell 7'); // profile 已添加
+    expect(after).toContain('pwsh.exe'); // commandline 指向 pwsh
+  });
+
   it('无 Windows Terminal：跳过终端设置', async () => {
     const pwshDir = 'C:\\Program Files\\PowerShell\\7';
     setExecForTest(async (cmd) => {
