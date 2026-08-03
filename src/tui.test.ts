@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => {
     logMessage: vi.fn(),
     isCancel: (v: unknown): boolean => v === CANCEL,
     detectProxy: vi.fn(),
+    ensurePwshIntegration: vi.fn(),
     installAgent: vi.fn(),
     ensurePrereqs: vi.fn(),
     updatePrereqs: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('./proxy.js', async (importOriginal) => {
   return { ...orig, detectProxy: mocks.detectProxy };
 });
 vi.mock('./agents.js', () => ({ installAgent: mocks.installAgent }));
+vi.mock('./pwsh-setup.js', () => ({ ensurePwshIntegration: mocks.ensurePwshIntegration }));
 vi.mock('./prereq.js', () => ({ ensurePrereqs: mocks.ensurePrereqs }));
 vi.mock('./update.js', () => ({ updatePrereqs: mocks.updatePrereqs, detectUpdates: mocks.detectUpdates }));
 vi.mock('./doctor.js', () => ({ runDoctor: mocks.runDoctor }));
@@ -95,6 +97,8 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     mocks.spinner.mockClear();
     mocks.logMessage.mockReset();
     mocks.detectProxy.mockReset();
+    mocks.ensurePwshIntegration.mockReset();
+    mocks.ensurePwshIntegration.mockResolvedValue({ pathFixed: false, terminalDefaultSet: false });
     mocks.installAgent.mockReset();
     mocks.ensurePrereqs.mockReset();
     mocks.updatePrereqs.mockReset();
@@ -311,6 +315,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     // 只更新选中的
     expect(mocks.updatePrereqs).toHaveBeenCalledTimes(1);
     expect(mocks.updatePrereqs.mock.calls[0][1]).toEqual(['node']);
+    expect(mocks.ensurePwshIntegration).toHaveBeenCalledTimes(1); // pwsh 更新后 PATH 提升（幂等）
     expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
     expect(mocks.printFileReport).toHaveBeenCalledTimes(1);
     expect(result.cancelled).toBe(false);

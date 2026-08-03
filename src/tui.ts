@@ -8,6 +8,7 @@ import { configFiles } from './fs-locations.js';
 import { log } from './logger.js';
 import { ensurePrereqs } from './prereq.js';
 import { detectProxy, npmRegistryFor, type CnMode, type ProxyInfo } from './proxy.js';
+import { ensurePwshIntegration } from './pwsh-setup.js';
 import { detectUpdates, updatePrereqs } from './update.js';
 import type { Manifest, Platform, ToolSpec, ToolState } from './types.js';
 
@@ -113,6 +114,7 @@ export async function executeUpdate(ctx: WizardContext, cnMode: CnMode): Promise
     picked as string[],
   );
   spin.stop(pre.failed.length === 0 ? '系统组件更新完成' : `更新失败：${pre.failed.join(', ')}`);
+  await ensurePwshIntegration(ctx.platform); // Windows：pwsh 更新后 PATH 首位 + 终端默认（幂等）
   const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled, ctx.platform);
   await printFileReport(ctx.platform, ctx.home);
   return { cancelled: false, writtenFiles: [], installedTools: [], doctorCode };
