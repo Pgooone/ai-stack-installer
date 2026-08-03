@@ -33,9 +33,16 @@ function runExec(cmd: string, opts: ExecOptions = {}): Promise<ExecResult> {
       resolve({ code, stdout, stderr });
     };
 
+    // 注入交互上下文：manifest 命令可按 AI_STACK_INTERACTIVE 决定行为
+    // （如 pwsh 的 MSI 安装：交互模式呼出安装向导，非交互/CI 静默安装）
+    const interactiveEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...(opts.env ?? {}),
+      AI_STACK_INTERACTIVE: detectTty() ? '1' : '0',
+    };
     const spawnOpts = {
       cwd: opts.cwd,
-      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+      env: interactiveEnv,
       windowsHide: true,
     };
     // Windows 用 powershell 包一层，POSIX 用 bash -c；spawn 数组传参避免自行拼接转义

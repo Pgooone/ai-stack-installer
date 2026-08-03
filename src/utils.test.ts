@@ -38,6 +38,12 @@ describe('exec（真实子进程冒烟：验证 powershell/bash 包装）', () =
     expect(r.code).toBe(3);
   }, 20_000);
 
+  it('注入 AI_STACK_INTERACTIVE（非 TTY 测试环境为 0），manifest 命令可据此切换静默/交互', async () => {
+    const r = await exec('node -e "console.log(process.env.AI_STACK_INTERACTIVE)"');
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim()).toBe('0'); // 测试环境非 TTY
+  }, 20_000);
+
   it('超时返回 code -1', async () => {
     const r = await exec('node -e "setTimeout(() => {}, 60_000)"', { timeout: 300 });
     expect(r.code).toBe(-1);
