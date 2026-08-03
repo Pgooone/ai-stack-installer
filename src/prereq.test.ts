@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLoggerHome } from './logger.js';
 import { ensurePrereqs } from './prereq.js';
 import type { Manifest } from './types.js';
@@ -133,18 +133,26 @@ describe('ensurePrereqs（注入 exec mock + 临时 home，不真跑 fnm/winget/
     expect(r.failed).toEqual(['node']);
   });
 
-  it('git 不满足：按 manifest 平台命令安装；已装工具不会重复安装', async () => {
+  it('git 不满足：按 manifest 平台命令安装；安装后复查通过；已装工具不会重复安装', async () => {
     const calls: string[] = [];
+    let gitChecks = 0;
     setExecForTest(async (cmd) => {
       calls.push(cmd);
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
-      if (cmd === 'git --version') return { code: 127, stdout: '', stderr: 'not found' };
+      if (cmd === 'git --version') {
+        gitChecks++;
+        // 安装前检查失败（触发安装），安装后复查通过
+        return gitChecks === 1
+          ? { code: 127, stdout: '', stderr: 'not found' }
+          : { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      }
       if (cmd === 'apt install -y git') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
     const r = await ensurePrereqs({ manifest: makeManifest(), platform: 'linux', home });
     expect(r.failed).toEqual([]);
     expect(calls).toContain('apt install -y git');
+    expect(gitChecks).toBe(2); // 安装前检查 + 安装后复查
   });
 
   it('异常抛出不中断：exec 抛错的工具记入 failed，继续处理下一个', async () => {
@@ -196,17 +204,45 @@ describe('ensurePrereqs（onlyOnWindows：非 Windows 平台跳过）', () => {
     expect(calls).toEqual(['node -v']); // pwsh 未被探测
   });
 
-  it('windows 平台：pwsh 正常检查，未装则按命令安装', async () => {
+  it('windows 平台：pwsh 正常检查，未装则按命令安装，安装后复查通过', async () => {
     const calls: string[] = [];
+    let pwshChecks = 0;
     setExecForTest(async (cmd) => {
       calls.push(cmd);
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
-      if (cmd === 'pwsh -v') return { code: 127, stdout: '', stderr: 'not found' };
+      if (cmd === 'pwsh -v') {
+        pwshChecks++;
+        return pwshChecks === 1
+          ? { code: 127, stdout: '', stderr: 'not found' }
+          : { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
+      }
       if (cmd === 'winget install --id Microsoft.PowerShell -e --silent') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
     const r = await ensurePrereqs({ manifest: manifestWithPwsh, platform: 'windows', home });
     expect(r.failed).toEqual([]);
     expect(calls).toContain('winget install --id Microsoft.PowerShell -e --silent');
+    expect(pwshChecks).toBe(2);
+  });
+
+  it('安装后复查失败（winget 对已装旧版本返回「已存在」不升级）：pwsh 记入 failed 并提示手动升级', async () => {
+    const calls: string[] = [];
+    let pwshChecks = 0;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setExecForTest(async (cmd) => {
+      calls.push(cmd);
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') {
+        pwshChecks++;
+        // 一直失败：旧版 pwsh 的 check 判为未装（minVersion 不足），winget 装完仍是旧版
+        return { code: 127, stdout: '', stderr: 'not found' };
+      }
+      if (cmd === 'winget install --id Microsoft.PowerShell -e --silent') return { code: 0, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePrereqs({ manifest: manifestWithPwsh, platform: 'windows', home });
+    expect(r.failed).toEqual(['pwsh']);
+    expect(pwshChecks).toBe(2); // 安装前检查 + 安装后复查（不假成功）
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('winget upgrade --id Microsoft.PowerShell'));
   });
 });

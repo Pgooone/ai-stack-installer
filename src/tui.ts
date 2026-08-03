@@ -8,6 +8,7 @@ import { configFiles } from './fs-locations.js';
 import { log } from './logger.js';
 import { ensurePrereqs } from './prereq.js';
 import { defaultCnMode, detectLocalProxy, type CnMode } from './proxy.js';
+import { updatePrereqs } from './update.js';
 import type { Manifest, Platform, ToolSpec, ToolState } from './types.js';
 
 export interface WizardContext {
@@ -31,22 +32,63 @@ export interface WizardResult {
 
 type ExecOutcome = 'ok' | 'skipped' | 'aborted' | 'cancelled';
 
-/** 6 步向导；步骤④汇总未确认时回到步骤①重新选择 */
+/** 向导：①功能选择 → ②网络 → ③工具多选 → ④cc-switch → ⑤汇总 → ⑥执行+⑦报告 */
 export async function runWizard(ctx: WizardContext): Promise<WizardResult> {
+  const action = await askAction(ctx); // ① 功能选择
+  if (action.cancelled) return cancelledResult();
+  if (action.mode === 'update') {
+    // 仅更新系统组件：网络确认 → 执行更新 → doctor + 文件清单
+    const net = await askNetwork(ctx);
+    if (net.cancelled) return cancelledResult();
+    return executeUpdate(ctx, net.cnMode);
+  }
   for (;;) {
-    const picked = await selectTools(ctx); // ①
+    const picked = await selectTools(ctx); // ③ 工具多选
     if (picked.cancelled) return cancelledResult();
-    const cnMode = await askNetwork(ctx); // ②
+    const cnMode = await askNetwork(ctx); // ② 网络
     if (cnMode.cancelled) return cancelledResult();
-    const cc = await askCcSwitch(ctx); // ③
+    const cc = await askCcSwitch(ctx); // ④
     if (cc.cancelled) return cancelledResult();
-    const confirmed = await askSummary(ctx, picked.tools, cc.install); // ④
+    const confirmed = await askSummary(ctx, picked.tools, cc.install); // ⑤
     if (confirmed.cancelled) return cancelledResult();
-    if (!confirmed.ok) continue; // 不确认 → 返回 ①
+    if (!confirmed.ok) continue; // 不确认 → 返回 ③
 
     const targets = cc.install && cc.tool ? [...picked.tools, cc.tool] : picked.tools;
-    return execute(ctx, targets, cnMode.cnMode); // ⑤ 执行 + ⑥ 报告
+    return execute(ctx, targets, cnMode.cnMode, action.mode === 'all'); // ⑥ 执行 + ⑦ 报告
   }
+}
+
+// ---- ① 功能选择：安装 Agent / 更新系统组件 / 全部执行 ----
+
+type WizardAction = { cancelled: boolean; mode: 'install' | 'update' | 'all' };
+
+async function askAction(_ctx: WizardContext): Promise<WizardAction> {
+  const choice = await select({
+    message: '选择要执行的操作',
+    options: [
+      { value: 'install', label: '安装 AI Agent（已装自动跳过）' },
+      { value: 'update', label: '更新系统组件（Node / Git / PowerShell 升级到最新）' },
+      { value: 'all', label: '全部执行（先更新组件，再安装 Agent）' },
+    ],
+  });
+  if (isCancel(choice)) return { cancelled: true, mode: 'install' };
+  return { cancelled: false, mode: (choice as 'install' | 'update' | 'all') ?? 'install' };
+}
+
+/** 仅更新系统组件：updatePrereqs → doctor + 文件清单 */
+async function executeUpdate(ctx: WizardContext, cnMode: CnMode): Promise<WizardResult> {
+  const spin = spinner();
+  spin.start('更新系统组件');
+  const pre = await updatePrereqs({
+    manifest: ctx.manifest,
+    platform: ctx.platform,
+    home: ctx.home,
+    cnMode: cnMode.enabled,
+  });
+  spin.stop(pre.failed.length === 0 ? '系统组件更新完成' : `更新失败：${pre.failed.join(', ')}`);
+  const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled, ctx.platform);
+  await printFileReport(ctx.platform, ctx.home);
+  return { cancelled: false, writtenFiles: [], doctorCode };
 }
 
 function cancelledResult(): WizardResult {
@@ -72,6 +114,13 @@ async function selectTools(ctx: WizardContext): Promise<PickResult> {
       disabled: installed ? true : undefined,
     };
   });
+  // 全部已装：无可选项（多选会全置灰导致无法继续），直接跳过选择
+  if (options.every((o) => o.disabled === true)) {
+    await log(
+      `所有 AI Agent 均已安装（${candidates.map((t) => t.id).join(', ')}），跳过工具选择，继续配置与检查`,
+    );
+    return { cancelled: false, tools: [] };
+  }
   const initialValues = options.filter((o) => !o.disabled).map((o) => o.value);
   const picked = await multiselect({
     message: '选择要安装的 AI Agent（a 全选 · 空格切换 · 回车确认）',
@@ -165,8 +214,24 @@ async function askSummary(
 
 // ---- ⑤ 执行 + ⑥ 报告：prereq → 逐工具安装（失败三选一）→ 配置写入 → doctor + 文件清单 ----
 
-async function execute(ctx: WizardContext, tools: ToolSpec[], cnMode: CnMode): Promise<WizardResult> {
+async function execute(
+  ctx: WizardContext,
+  tools: ToolSpec[],
+  cnMode: CnMode,
+  doUpdate = false,
+): Promise<WizardResult> {
   const spin = spinner();
+  if (doUpdate) {
+    // 全部执行模式：先更新系统组件，再装 Agent
+    spin.start('更新系统组件');
+    const pre = await updatePrereqs({
+      manifest: ctx.manifest,
+      platform: ctx.platform,
+      home: ctx.home,
+      cnMode: cnMode.enabled,
+    });
+    spin.stop(pre.failed.length === 0 ? '系统组件更新完成' : `更新失败：${pre.failed.join(', ')}`);
+  }
   spin.start('检查前置依赖');
   const pre = await ensurePrereqs({
     manifest: ctx.manifest,

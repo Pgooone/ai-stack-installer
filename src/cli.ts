@@ -13,9 +13,10 @@ import { defaultCnMode } from './proxy.js';
 import { runWizard } from './tui.js';
 import type { Manifest, Platform } from './types.js';
 import { runUninstall } from './uninstall.js';
+import { updatePrereqs } from './update.js';
 import { detectTty } from './utils.js';
 
-export type CliCommand = 'install' | 'doctor' | 'uninstall' | 'list';
+export type CliCommand = 'install' | 'doctor' | 'update' | 'uninstall' | 'list';
 export type Profile = 'minimal' | 'full';
 
 export interface CliOptions {
@@ -37,6 +38,7 @@ const USAGE = `ai-stack — AI Agent 一键安装脚本（跨平台）
 
 子命令:
   install      安装（默认）：探测 → 向导/直装 → 依赖 → 工具 → 配置 → 自检
+  update       更新系统组件（Node / Git / PowerShell 升级到最新）后自检
   doctor       自检：输出各工具版本与状态（退出码：有未就绪为 1）
   uninstall    卸载：移除工具、配置与 ~/.ai-stack（默认交互确认）
   list         列出 manifest 工具清单与安装状态
@@ -91,7 +93,7 @@ export function parseArgs(argv: string[]): CliOptions {
   }
   const cmd = positional[0];
   if (cmd) {
-    if (cmd === 'install' || cmd === 'doctor' || cmd === 'uninstall' || cmd === 'list') {
+    if (cmd === 'install' || cmd === 'doctor' || cmd === 'update' || cmd === 'uninstall' || cmd === 'list') {
       opts.command = cmd;
     } else {
       throw new Error(`未知子命令：${cmd}`);
@@ -119,6 +121,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     // home 取自 detect()：测试可注入临时目录，不触碰真实用户目录
     const info = await detect();
     const env: CliEnv = { platform: info.platform, home: info.home };
+    if (opts.command === 'update') return runUpdate(env, manifest, opts.cn);
     if (opts.command === 'install') return runInstall(opts, env, manifest);
     return runUninstall({ manifest, platform: env.platform, home: env.home, yes: opts.yes });
   } catch (err) {
@@ -130,6 +133,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 async function runInstall(opts: CliOptions, env: CliEnv, manifest: Manifest): Promise<number> {
   if (decideInteractive(opts)) return runInstallWizard(opts, env, manifest);
   return runInstallDirect(opts, env, manifest);
+}
+
+// ---- update：更新系统组件（node/git/pwsh 升级到最新），cn 模式下注入镜像/代理 ----
+
+async function runUpdate(env: CliEnv, manifest: Manifest, cn: boolean): Promise<number> {
+  const result = await updatePrereqs({ manifest, platform: env.platform, home: env.home, cnMode: cn });
+  if (result.failed.length > 0) await fail(`更新失败：${result.failed.join(', ')}`);
+  const code = await runDoctor(manifest, cn, env.platform);
+  return result.failed.length > 0 || code !== 0 ? 1 : 0;
 }
 
 // ---- install（交互向导）：runWizard 6 步完成后记录 installed.json ----

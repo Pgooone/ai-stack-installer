@@ -264,7 +264,7 @@ describe('stateOf', () => {
   it('check 成功取首行版本', async () => {
     setExecForTest(async () => ({ code: 0, stdout: 'v22.5.0\r\nsome warning\r\n', stderr: '' }));
     const s = await stateOf({ id: 'node', bin: 'node', check: 'node -v' });
-    expect(s).toEqual({ id: 'node', bin: 'node', installed: true, version: 'v22.5.0' });
+    expect(s).toEqual({ id: 'node', bin: 'node', installed: true, version: '22.5.0' });
   });
 
   it('minVersion 不满足视为未装', async () => {
@@ -277,7 +277,7 @@ describe('stateOf', () => {
     setExecForTest(async () => ({ code: 0, stdout: 'v20.0.0\n', stderr: '' }));
     const s = await stateOf({ id: 'node', bin: 'node', check: 'node -v', minVersion: '20.0.0' });
     expect(s.installed).toBe(true);
-    expect(s.version).toBe('v20.0.0');
+    expect(s.version).toBe('20.0.0');
   });
 
   it('check 失败（非零 code）视为未装', async () => {
@@ -308,7 +308,7 @@ describe('stateOf', () => {
       minVersion: '20.0.0',
     });
     expect(s.installed).toBe(true);
-    expect(s.version).toBe('v22.5.0');
+    expect(s.version).toBe('22.5.0');
   }, 20_000);
 
   it('真实执行 node -e 假 check（集成冒烟：版本低于 minVersion 视为未装）', async () => {

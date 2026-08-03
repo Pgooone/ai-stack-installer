@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
     detectLocalProxy: vi.fn(),
     installAgent: vi.fn(),
     ensurePrereqs: vi.fn(),
+    updatePrereqs: vi.fn(),
     runDoctor: vi.fn(),
     writeConfigFiles: vi.fn(),
     writeAliasBlock: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock('./proxy.js', async (importOriginal) => {
 });
 vi.mock('./agents.js', () => ({ installAgent: mocks.installAgent }));
 vi.mock('./prereq.js', () => ({ ensurePrereqs: mocks.ensurePrereqs }));
+vi.mock('./update.js', () => ({ updatePrereqs: mocks.updatePrereqs }));
 vi.mock('./doctor.js', () => ({ runDoctor: mocks.runDoctor }));
 vi.mock('./configure.js', () => ({
   writeConfigFiles: mocks.writeConfigFiles,
@@ -94,12 +96,14 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     mocks.detectLocalProxy.mockReset();
     mocks.installAgent.mockReset();
     mocks.ensurePrereqs.mockReset();
+    mocks.updatePrereqs.mockReset();
     mocks.runDoctor.mockReset();
     mocks.writeConfigFiles.mockReset();
     mocks.writeAliasBlock.mockReset();
     mocks.printFileReport.mockReset();
     mocks.detectLocalProxy.mockResolvedValue(null);
     mocks.ensurePrereqs.mockResolvedValue({ failed: [] });
+    mocks.updatePrereqs.mockResolvedValue({ updated: [], failed: [], skipped: [] });
     mocks.installAgent.mockResolvedValue('ok');
     mocks.runDoctor.mockResolvedValue(0);
     mocks.writeConfigFiles.mockResolvedValue({
@@ -115,15 +119,19 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     await rm(tmpRoot, { recursive: true, force: true });
   });
 
-  it('①已装置灰+预选未装；②代理检测到→cn；③装 cc-switch；④汇总；⑤安装 codex+cc-switch；⑥doctor+清单', async () => {
+  it('①功能选择+已装置灰+预选未装；②代理检测到→cn；③装 cc-switch；④汇总；⑤安装 codex+cc-switch；⑥doctor+清单', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex']);
     mocks.detectLocalProxy.mockResolvedValueOnce({ host: '127.0.0.1', port: 7890 });
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.select.mockResolvedValueOnce('cn'); // ② 网络
     mocks.confirm.mockResolvedValueOnce(true); // ③ cc-switch
     mocks.confirm.mockResolvedValueOnce(true); // ④ 汇总
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
 
-    // ①：claude-code 已装置灰并标注版本，未装工具预选
+    // ①：功能选择文案
+    expect(mocks.select.mock.calls[0][0].message).toContain('选择要执行的操作');
+
+    // ③（原①）：claude-code 已装置灰并标注版本，未装工具预选
     const msCall = mocks.multiselect.mock.calls[0][0];
     const ccOption = msCall.options.find((o: { value: string }) => o.value === 'claude-code');
     expect(ccOption.disabled).toBe(true);
@@ -131,7 +139,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(msCall.initialValues).toEqual(['codex', 'pi']);
 
     // ②：代理检测到 → 询问文案含检测结果
-    expect(mocks.select.mock.calls[0][0].message).toContain('检测到本地代理 127.0.0.1:7890');
+    expect(mocks.select.mock.calls[1][0].message).toContain('检测到本地代理 127.0.0.1:7890');
 
     // ③④：两次 confirm（cc-switch → 汇总）
     expect(mocks.confirm).toHaveBeenCalledTimes(2);
@@ -158,22 +166,41 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     });
   });
 
+  it('工具多选全已装：跳过多选（否则全置灰无法继续），直接进入②网络', async () => {
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
+    mocks.select.mockResolvedValueOnce('direct'); // ② 网络
+    mocks.confirm.mockResolvedValueOnce(false); // ③ cc-switch 否（cc-switch 保持未装，询问正常进行）
+    mocks.confirm.mockResolvedValueOnce(true); // ④ 汇总确认
+    // 只把 3 个 agent 标为已装；cc-switch（optIn）保持未装以正常走③询问
+    const allInstalled = makeStates().map((s) =>
+      s.id === 'cc-switch' ? s : { ...s, installed: true, version: 'v9.9.9' },
+    );
+    const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: allInstalled });
+    expect(mocks.multiselect).not.toHaveBeenCalled(); // 工具多选跳过
+    expect(mocks.select).toHaveBeenCalledTimes(2); // 功能选择 + 网络
+    expect(mocks.installAgent).not.toHaveBeenCalled(); // 无工具可装
+    expect(result.cancelled).toBe(false);
+    expect(result.writtenFiles).toEqual([join(home, '.claude', 'settings.json'), join(home, '.codex', 'config.toml')]);
+  });
+
   it('②未检测到代理：提示需自行开代理，仍可选 cn 模式', async () => {
     mocks.multiselect.mockResolvedValueOnce([]);
     mocks.detectLocalProxy.mockResolvedValueOnce(null);
-    mocks.select.mockResolvedValueOnce('cn');
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
+    mocks.select.mockResolvedValueOnce('cn'); // ② 网络
     mocks.confirm.mockResolvedValueOnce(false); // ③ cc-switch 否
     mocks.confirm.mockResolvedValueOnce(true); // ④ 汇总（装 0 个）
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
     expect(result.cancelled).toBe(false);
-    expect(mocks.select.mock.calls[0][0].message).toContain('未检测到本地代理');
-    expect(mocks.select.mock.calls[0][0].message).toContain('仍可启用 cn 模式');
+    expect(mocks.select.mock.calls[1][0].message).toContain('未检测到本地代理');
+    expect(mocks.select.mock.calls[1][0].message).toContain('仍可启用 cn 模式');
     // 汇总文案：装 0 个
     expect(mocks.confirm.mock.calls[1][0].message).toContain('将安装 0 个工具');
   });
 
   it('③不装 cc-switch：只装勾选工具，汇总不出现 cc-switch', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex']);
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.select.mockResolvedValueOnce('direct');
     mocks.confirm.mockResolvedValueOnce(false); // cc-switch 否
     mocks.confirm.mockResolvedValueOnce(true); // 汇总
@@ -182,11 +209,12 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(mocks.confirm.mock.calls[1][0].message).toContain('将安装 1 个工具');
   });
 
-  it('④汇总不确认 → 返回①重新多选（循环直到确认）', async () => {
+  it('④汇总不确认 → 返回工具多选重新选择（循环直到确认）', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex']);
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.select.mockResolvedValueOnce('direct');
     mocks.confirm.mockResolvedValueOnce(false); // cc-switch 否
-    mocks.confirm.mockResolvedValueOnce(false); // 汇总不确认 → 回 ①
+    mocks.confirm.mockResolvedValueOnce(false); // 汇总不确认 → 回 工具多选
     mocks.multiselect.mockResolvedValueOnce(['codex', 'pi']);
     mocks.confirm.mockResolvedValueOnce(false); // 第二轮 cc-switch 否
     mocks.confirm.mockResolvedValueOnce(true); // 第二轮汇总确认
@@ -198,6 +226,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
 
   it('⑤安装失败 → 三选一「重试」成功继续', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex']);
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.select.mockResolvedValueOnce('direct'); // ② 网络
     mocks.select.mockResolvedValueOnce('retry'); // ⑤ 失败三选一
     mocks.confirm.mockResolvedValueOnce(false); // cc-switch
@@ -210,8 +239,8 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(mocks.installAgent).toHaveBeenCalledTimes(2); // 失败一次 + 重试一次
     expect(mocks.installAgent.mock.calls.map((c) => c[0].id)).toEqual(['codex', 'codex']);
     // 三选一文案
-    expect(mocks.select.mock.calls[1][0].message).toContain('安装失败');
-    expect(mocks.select.mock.calls[1][0].options.map((o: { label: string }) => o.label)).toEqual([
+    expect(mocks.select.mock.calls[2][0].message).toContain('安装失败');
+    expect(mocks.select.mock.calls[2][0].options.map((o: { label: string }) => o.label)).toEqual([
       '重试',
       '跳过',
       '终止（保留已装部分）',
@@ -220,6 +249,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
 
   it('⑤安装失败 → 「跳过」：不重试，继续下一个工具', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex', 'pi']);
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.select.mockResolvedValueOnce('direct'); // ② 网络
     mocks.select.mockResolvedValueOnce('skip'); // ⑤ codex 失败 → 跳过
     mocks.confirm.mockResolvedValueOnce(false); // cc-switch
@@ -235,6 +265,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
 
   it('⑤安装失败 → 「终止」：停止后续安装，仍写配置 + doctor + 文件清单', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex', 'pi']);
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.select.mockResolvedValueOnce('direct'); // ② 网络
     mocks.select.mockResolvedValueOnce('abort'); // ⑤ codex 失败 → 终止
     mocks.confirm.mockResolvedValueOnce(false); // cc-switch
@@ -249,14 +280,41 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(mocks.logMessage.mock.calls.some((c: unknown[]) => String(c[0]).includes('终止'))).toBe(true);
   });
 
-  it('任一 prompt 被取消（clack cancel）→ cancelled=true', async () => {
-    mocks.multiselect.mockResolvedValueOnce(mocks.CANCEL);
+  it('功能选择被取消（clack cancel）→ cancelled=true', async () => {
+    mocks.select.mockResolvedValueOnce(mocks.CANCEL);
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
     expect(result).toEqual({ cancelled: true, writtenFiles: [], doctorCode: 0 });
   });
 
-  it('--cn 强制（cnForced）：跳过②网络询问', async () => {
+  it('功能选择「更新系统组件」：只更新不装 Agent，跳过工具多选/cc-switch/汇总', async () => {
+    mocks.select.mockResolvedValueOnce('update'); // ① 功能选择 → 更新
+    mocks.select.mockResolvedValueOnce('direct'); // ② 网络
+    mocks.updatePrereqs.mockResolvedValueOnce({ updated: ['pwsh'], failed: [], skipped: [] });
+    const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
+    expect(mocks.multiselect).not.toHaveBeenCalled();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    expect(mocks.updatePrereqs).toHaveBeenCalledTimes(1);
+    expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
+    expect(mocks.printFileReport).toHaveBeenCalledTimes(1);
+    expect(result.cancelled).toBe(false);
+  });
+
+  it('功能选择「全部执行」：先更新组件，再走安装流程', async () => {
     mocks.multiselect.mockResolvedValueOnce(['codex']);
+    mocks.select.mockResolvedValueOnce('all'); // ① 功能选择 → 全部
+    mocks.select.mockResolvedValueOnce('direct'); // ② 网络
+    mocks.confirm.mockResolvedValueOnce(false); // cc-switch
+    mocks.confirm.mockResolvedValueOnce(true); // 汇总
+    mocks.updatePrereqs.mockResolvedValueOnce({ updated: ['node'], failed: [], skipped: [] });
+    const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
+    expect(mocks.updatePrereqs).toHaveBeenCalledTimes(1); // 全部执行先更新
+    expect(mocks.installAgent.mock.calls.map((c) => c[0].id)).toEqual(['codex']);
+    expect(result.cancelled).toBe(false);
+  });
+
+  it('--cn 强制（cnForced）：跳过网络询问', async () => {
+    mocks.multiselect.mockResolvedValueOnce(['codex']);
+    mocks.select.mockResolvedValueOnce('install'); // ① 功能选择
     mocks.confirm.mockResolvedValueOnce(false); // cc-switch
     mocks.confirm.mockResolvedValueOnce(true); // 汇总
     const result = await runWizard({
@@ -266,7 +324,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
       states: makeStates(),
       cnForced: { enabled: true, registry: 'https://registry.npmmirror.com', proxyHost: '127.0.0.1', proxyPort: 7890 },
     });
-    expect(mocks.select).not.toHaveBeenCalled(); // 网络询问被跳过
+    expect(mocks.select).toHaveBeenCalledTimes(1); // 仅功能选择，网络询问被跳过
     expect(mocks.detectLocalProxy).not.toHaveBeenCalled();
     expect(mocks.installAgent.mock.calls[0][1].cnMode.enabled).toBe(true);
     expect(result.cancelled).toBe(false);

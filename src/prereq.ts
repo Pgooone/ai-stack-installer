@@ -57,7 +57,17 @@ async function ensureOne(tool: ToolSpec, ctx: PrereqContext): Promise<boolean> {
   const cmd = installCmd(tool, ctx.platform, ctx.cnMode ?? false);
   if (!cmd) return false; // 该平台无安装命令
   const r = await exec(cmd);
-  return r.code === 0;
+  if (r.code !== 0) return false;
+  // 安装后复查：winget 对已装旧版本返回「已存在」退出码 0 但不升级，
+  // 不复查会假成功（如 pwsh 版本低于 minVersion 却报「就绪」）
+  const after = await stateOf(tool);
+  if (!after.installed) {
+    fail(`前置依赖 ${tool.id} 安装后仍不满足版本要求（当前 ${after.version ?? '未知'}，要求 ≥${tool.minVersion ?? ''}）`);
+    if (tool.id === 'pwsh') {
+      fail('提示：请手动执行 winget upgrade --id Microsoft.PowerShell 或从 https://github.com/PowerShell/PowerShell/releases 更新');
+    }
+  }
+  return after.installed;
 }
 
 // ---- node：linux/macos 走 fnm，windows 走 winget + PATH 刷新 ----

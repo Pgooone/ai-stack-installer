@@ -70,7 +70,7 @@ describe('detectNode', () => {
   it('node ≥20 视为可用并带版本', async () => {
     setExecForTest(async () => ({ code: 0, stdout: 'v22.5.0\n', stderr: '' }));
     const s = await detectNode();
-    expect(s).toEqual({ id: 'node', bin: 'node', installed: true, version: 'v22.5.0' });
+    expect(s).toEqual({ id: 'node', bin: 'node', installed: true, version: '22.5.0' });
   });
 
   it('node 主版本 <20 视为不可用', async () => {

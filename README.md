@@ -9,7 +9,7 @@
 ```bash
 # Linux / macOS / WSL
 curl -fsSL https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/install.sh -o install.sh
-bash install.sh          # 交互向导：选择工具 / 网络模式 / CC Switch
+bash install.sh          # 交互向导：功能选择 / 工具 / 网络 / CC Switch
 bash install.sh -y       # 跳过向导，直接安装（默认全量工具）
 ```
 
@@ -31,6 +31,25 @@ iwr -useb https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/inst
 | Pi | 直接 npm 安装（官方安装器为交互式，不适合 `-y` 直装） | 可走 npm 镜像 |
 | OpenCode | 同上 | 可走 npm 镜像 |
 | CC Switch（可选） | Claude Code 供应商切换器（桌面 GUI），向导中询问 | 需代理（winget 源/GitHub Releases） |
+
+## 功能选择（交互向导第一步）
+
+```
+◆ 选择要执行的操作
+  ◉ 安装 AI Agent（已装自动跳过）
+  ○ 更新系统组件（Node / Git / PowerShell 升级到最新）
+  ○ 全部执行（先更新组件，再安装 Agent）
+```
+
+也可用 `ai-stack update` 子命令直接更新系统组件（非交互）：
+
+```bash
+ai-stack update        # 更新 Node / Git / PowerShell 到最新
+ai-stack update --cn   # 走镜像/代理更新
+```
+
+> 注意：Windows 上部分组件升级（如 Git/PowerShell）需要管理员权限；
+> 「无可用升级」会正常提示不算失败。
 
 ## 参数
 

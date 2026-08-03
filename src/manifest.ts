@@ -126,7 +126,7 @@ export async function stateOf(tool: ToolSpec): Promise<ToolState> {
   if (result.code !== 0) {
     return { ...base, installed: false };
   }
-  const version = firstLine(result.stdout);
+  const version = extractVersion(result.stdout);
   if (!version) {
     // 命令成功但无版本输出：要求了 minVersion 则无法确认，按未装处理
     return { ...base, installed: tool.minVersion === undefined };
@@ -135,7 +135,12 @@ export async function stateOf(tool: ToolSpec): Promise<ToolState> {
   return installed ? { ...base, installed: true, version } : { ...base, installed: false };
 }
 
-function firstLine(s: string): string {
+/**
+ * 从 check 输出首行提取语义版本号（容忍前缀/后缀）：
+ * "v24.14.0" / "PowerShell 7.6.4" / "git version 2.53.0.windows.1" → "24.14.0" / "7.6.4" / "2.53.0"
+ */
+function extractVersion(s: string): string | undefined {
   const line = s.trim().split(/\r?\n/)[0];
-  return line ? line.trim() : '';
+  if (!line) return undefined;
+  return line.match(/\d+\.\d+(?:\.\d+)?/)?.[0];
 }

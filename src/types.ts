@@ -22,6 +22,9 @@ export interface ToolSpec {
   macos?: string; // 缺省回退 linux
   windows?: string; // PowerShell 命令
   fallback?: string; // 主通道失败后的 npm 安装命令
+  upgrade?: string; // 升级到最新的命令（ai-stack update 用；无则不参与更新）
+  upgradeMacos?: string; // macos 专属升级命令（缺省回退 upgrade）
+  upgradeWindows?: string; // windows 专属升级命令
   uninstall?: string; // 卸载命令（按平台可分别给出 uninstall.windows 等）
   uninstallWindows?: string;
 }

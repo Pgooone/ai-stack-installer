@@ -51,7 +51,7 @@ describe('runDoctor（注入 exec mock，不探测真实环境）', () => {
     await expect(runDoctor(makeManifest(), false, 'linux')).resolves.toBe(0);
     const output = spy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(output).toContain('node');
-    expect(output).toContain('v22.5.0');
+    expect(output).toContain('22.5.0');
     expect(output).toContain('claude-code');
     expect(output).toContain('✓');
     expect(output).not.toContain('✗');

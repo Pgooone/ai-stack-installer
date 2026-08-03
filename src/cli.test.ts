@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   detect: vi.fn(),
   detectTools: vi.fn(),
   ensurePrereqs: vi.fn(),
+  updatePrereqs: vi.fn(),
   installAgent: vi.fn(),
   runDoctor: vi.fn(),
   writeConfigFiles: vi.fn(),
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./detect.js', () => ({ detect: mocks.detect, detectTools: mocks.detectTools }));
 vi.mock('./prereq.js', () => ({ ensurePrereqs: mocks.ensurePrereqs }));
+vi.mock('./update.js', () => ({ updatePrereqs: mocks.updatePrereqs }));
 vi.mock('./agents.js', () => ({ installAgent: mocks.installAgent }));
 vi.mock('./doctor.js', () => ({ runDoctor: mocks.runDoctor }));
 vi.mock('./configure.js', () => ({
@@ -113,6 +115,7 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     mocks.detect.mockReset();
     mocks.detectTools.mockReset();
     mocks.ensurePrereqs.mockReset();
+    mocks.updatePrereqs.mockReset();
     mocks.installAgent.mockReset();
     mocks.runDoctor.mockReset();
     mocks.writeConfigFiles.mockReset();
@@ -229,6 +232,22 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     expect(code).toBe(1);
     expect(mocks.detect).toHaveBeenCalled();
     expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
+  });
+
+  it('update 子命令：执行 updatePrereqs（含 cn 透传）+ doctor，全绿返回 0', async () => {
+    mocks.updatePrereqs.mockResolvedValue({ updated: ['pwsh'], failed: [], skipped: ['git'] });
+    mocks.runDoctor.mockResolvedValue(0);
+    const code = await main(['update', '--cn']);
+    expect(code).toBe(0);
+    expect(mocks.updatePrereqs).toHaveBeenCalledTimes(1);
+    expect(mocks.updatePrereqs.mock.calls[0][0].cnMode).toBe(true);
+    expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
+  });
+
+  it('update 子命令：有更新失败 → 退出码 1', async () => {
+    mocks.updatePrereqs.mockResolvedValue({ updated: [], failed: ['pwsh'], skipped: [] });
+    const code = await main(['update']);
+    expect(code).toBe(1);
   });
 
   it('list 子命令：detectTools 输出清单', async () => {

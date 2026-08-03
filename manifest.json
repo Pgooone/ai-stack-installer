@@ -1,11 +1,16 @@
 {
   "prereq": [
-    { "id": "node", "bin": "node", "check": "node -v", "minVersion": "20.0.0" },
+    { "id": "node", "bin": "node", "check": "node -v", "minVersion": "20.0.0",
+      "upgrade": "fnm install --lts && fnm alias lts-latest default",
+      "upgradeWindows": "winget upgrade --id OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements" },
     { "id": "git", "bin": "git", "check": "git --version",
       "linux": "sudo apt-get install -y git", "macos": "brew install git",
-      "windows": "winget install --id Git.Git -e --silent --accept-source-agreements --accept-package-agreements" },
-    { "id": "pwsh", "bin": "pwsh", "check": "pwsh -v", "onlyOnWindows": true,
-      "windows": "winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements" }
+      "windows": "winget install --id Git.Git -e --silent --accept-source-agreements --accept-package-agreements",
+      "upgrade": "sudo apt-get install --only-upgrade -y git", "upgradeMacos": "brew upgrade git",
+      "upgradeWindows": "winget upgrade --id Git.Git -e --silent --accept-source-agreements --accept-package-agreements" },
+    { "id": "pwsh", "bin": "pwsh", "check": "pwsh -v", "minVersion": "7.0.0", "onlyOnWindows": true,
+      "windows": "winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements",
+      "upgradeWindows": "winget upgrade --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements" }
   ],
   "agents": [
     { "id": "claude-code", "bin": "claude", "check": "claude --version", "needsProxy": true,
