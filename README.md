@@ -21,6 +21,9 @@ iwr -useb https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/inst
 ```
 
 > 入口脚本只负责「装 Node ≥20 + 拉起 npm 包」，安装逻辑在 `ai-stack-installer` 包内。
+>
+> **国内网络自动适配**：入口脚本会先探测 npmjs.org 是否可达——不可达（无代理）时自动使用
+> npmmirror 镜像拉取核心包；拉取失败也会自动镜像重试。已有代理环境变量时保持官方源。
 
 ## 支持的工具
 
