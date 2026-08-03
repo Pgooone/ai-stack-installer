@@ -92,6 +92,13 @@ Remove-Item "$env:LOCALAPPDATA\npm-cache\_npx" -Recurse -Force
 > 新版本脚本执行完毕会自动清理 npx 缓存 + 入口脚本（`AI_STACK_KEEP=1` 可保留），
 > 正常使用不会累积旧缓存；只有早期版本残留才需要手动清一次。
 
+**更新入口脚本本身**（install.sh / install.ps1 是薄壳，核心逻辑全在 npm 包内，
+一般无需更新；确需重下时注意 GitHub raw CDN 有缓存，加 `?v=` 参数绕过）：
+
+```powershell
+iwr -useb "https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/install.ps1?v=$((Get-Random))" -OutFile install.ps1
+```
+
 ## 参数
 
 | 参数 | 说明 |

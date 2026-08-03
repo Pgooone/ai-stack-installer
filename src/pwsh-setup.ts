@@ -28,7 +28,7 @@ export async function ensurePwshIntegration(platform: Platform): Promise<PwshInt
     return report;
   }
   report.pathFixed = await promotePwshInPath(pwshDir);
-  report.terminalDefaultSet = await setTerminalDefault(pwshDir);
+  report.terminalDefaultSet = await setTerminalDefault();
   return report;
 }
 
@@ -83,7 +83,7 @@ async function promotePwshInPath(pwshDir: string): Promise<boolean> {
 }
 
 /** Windows Terminal settings.json（JSONC 允许注释——文本操作保留原格式）设置 defaultProfile 为 pwsh */
-async function setTerminalDefault(pwshDir: string): Promise<boolean> {
+async function setTerminalDefault(): Promise<boolean> {
   const wtSettings = join(process.env.LOCALAPPDATA ?? '', ...WT_SETTINGS_REL);
   let raw: string;
   try {
@@ -92,20 +92,20 @@ async function setTerminalDefault(pwshDir: string): Promise<boolean> {
     await log('未检测到 Windows Terminal（跳过默认终端设置）');
     return false;
   }
-  // 读取 profiles.list 找到真实存在的 PowerShell 7 profile 的 GUID
-  // （用户可能自定义/静态化 profile，硬编码固定 GUID 会指向不存在的 profile 导致设置失败）
+  // 读取 profiles.list 找到 PowerShell 7 的实际 GUID：
+  // 1. 静态显式 pwsh profile（commandline 指向 pwsh）→ 用其 GUID
+  // 2. 否则用 Windows Terminal 内置固定 GUID（574e...）——pwsh 已装时 WT 会自动生成
+  //    同 GUID 的动态 profile，**绝不添加静态 profile**（会与动态 profile GUID 冲突，
+  //    WT 报「多个相同 GUID」错误）
   let pwshGuid = findPwshProfileGuid(raw);
   if (!pwshGuid) {
-    // WT 中没有 pwsh profile → 添加一个（commandline 指向 pwsh.exe）再设默认
-    const pwshExe = join(pwshDir, 'pwsh.exe');
-    const added = addPwshProfile(raw, pwshExe);
-    if (!added) {
-      await log('无法添加 PowerShell 7 profile 到 Windows Terminal（未找到 profiles.list）');
-      return false;
+    // 清理历史误加的静态 574e profile（旧版本曾添加，与动态 profile 冲突）
+    const cleaned = removeStaticPwshProfile(raw);
+    if (cleaned) {
+      raw = cleaned;
+      await ok('已移除与 Windows Terminal 内置 profile 冲突的重复 PowerShell 7 profile');
     }
-    raw = added.raw;
-    pwshGuid = added.guid;
-    await ok(`已在 Windows Terminal 添加 PowerShell 7 profile（${pwshExe}）`);
+    pwshGuid = PWSH_GUID; // 动态 profile 的固定 GUID（pwsh 已安装时必然存在）
   }
   // 幂等：defaultProfile 已是该 pwsh profile
   if (new RegExp(`"defaultProfile"\\s*:\\s*"${pwshGuid.replace(/[{}]/g, '\\$&')}"`).test(raw)) {
@@ -125,15 +125,31 @@ async function setTerminalDefault(pwshDir: string): Promise<boolean> {
   return true;
 }
 
-/** 在 profiles.list 中插入一个 PowerShell 7 profile（固定 GUID + commandline 指向 pwsh.exe）；返回新内容与 GUID */
-function addPwshProfile(raw: string, pwshExe: string): { raw: string; guid: string } | null {
+/**
+ * 移除 profiles.list 中固定 GUID（574e...）的静态 profile——旧版本曾添加它，
+ * 与 WT 内置动态 PowerShell 7 profile 同 GUID 冲突（WT 报「多个相同 GUID」）。
+ * 移除后由动态 profile 接管。返回清理后的内容；无需清理返回 null。
+ */
+function removeStaticPwshProfile(raw: string): string | null {
   const listMatch = /("list"\s*:\s*\[)([\s\S]*?)(\]\s*[,}])/.exec(raw);
   if (!listMatch) return null;
-  const escaped = pwshExe.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  const profile = `{\n                "guid": "${PWSH_GUID}",\n                "name": "PowerShell 7",\n                "commandline": "${escaped}",\n                "hidden": false\n            }`;
-  const items = listMatch[2].trim();
-  const next = items ? `${items},\n            ${profile}` : profile;
-  return { raw: raw.replace(listMatch[0], `${listMatch[1]}${next}${listMatch[3]}`), guid: PWSH_GUID };
+  const body = listMatch[2];
+  const profiles = extractProfiles(body); // 平衡花括号提取（GUID 值含嵌套花括号）
+  let changed = false;
+  let nextBody = body;
+  for (const p of profiles) {
+    const guid = /"guid"\s*:\s*"([^"]+)"/.exec(p)?.[1];
+    if (guid !== PWSH_GUID) continue;
+    // 只删 commandline 型（旧版本误加的残留）；source 型（PowershellCore 动态）是有效的，保留
+    if (/"source"/.test(p)) continue;
+    // 删除该 profile（连同前导逗号与缩进）
+    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    nextBody = nextBody.replace(new RegExp(`\\s*,\\s*${escaped}`), '');
+    nextBody = nextBody.replace(new RegExp(`\\s*${escaped}\\s*`), '');
+    changed = true;
+  }
+  if (!changed) return null;
+  return raw.replace(listMatch[0], `${listMatch[1]}${nextBody}${listMatch[3]}`);
 }
 
 /** 定位 profiles.list 数组文本（"list" 键在 settings.json 唯一，容忍 profiles 对象内其他键如 defaults） */
@@ -142,20 +158,29 @@ function findListText(raw: string): string | null {
   return listMatch ? listMatch[1] : null;
 }
 
-/** 解析 profiles.list，返回 PowerShell 7 profile 的实际 GUID；未找到返回 null */
+/**
+ * 解析 profiles.list，返回 PowerShell 7 profile 的有效 GUID；未找到返回 null。
+ * 判定规则：
+ * - source=PowerShell（WT 动态/用户静态化）→ 有效，用其 guid（无则固定 574e）
+ * - commandline 指向 pwsh 且 guid ≠ 574e → 用户自定义，用其 guid
+ * - commandline 指向 pwsh 且 guid = 574e → 旧版本误加的残留（与动态 profile 冲突），
+ *   跳过并返回 null（由调用方触发清理）
+ */
 export function findPwshProfileGuid(raw: string): string | null {
   const listText = findListText(raw);
   if (listText === null) return null;
   const profiles = extractProfiles(listText); // 平衡花括号提取（GUID 值含嵌套花括号）
   for (const p of profiles) {
-    const isPwsh =
-      /"source"\s*:\s*"PowerShell"/.test(p) || /"commandline"\s*:\s*"[^"]*pwsh/i.test(p);
-    if (!isPwsh) continue;
-    const guid = /"guid"\s*:\s*"([^"]+)"/.exec(p)?.[1];
-    if (guid) return guid;
+    // Windows.Terminal.PowershellCore（pwsh 的动态 source profile）或显式 "PowerShell"
+    if (/"source"\s*:\s*"Windows\.Terminal\.PowershellCore"/.test(p) || /"source"\s*:\s*"PowerShell"/.test(p)) {
+      return /"guid"\s*:\s*"([^"]+)"/.exec(p)?.[1] ?? PWSH_GUID;
+    }
   }
-  // source=PowerShell 的动态 profile 无显式 guid → Windows Terminal 内置固定 GUID
-  if (profiles.some((p) => /"source"\s*:\s*"PowerShell"/.test(p))) return PWSH_GUID;
+  for (const p of profiles) {
+    const guid = /"guid"\s*:\s*"([^"]+)"/.exec(p)?.[1];
+    if (guid === PWSH_GUID) continue; // 误加残留
+    if (/"commandline"\s*:\s*"[^"]*pwsh/i.test(p)) return guid ?? null;
+  }
   return null;
 }
 
