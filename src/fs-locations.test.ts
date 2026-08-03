@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import { join, win32 } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { aiStackDir, configFiles, logFile, markers, npxCacheDir, rcFiles } from './fs-locations.js';
 
@@ -46,7 +46,7 @@ describe('fs-locations（home 显式注入，不触碰真实用户目录）', ()
   it('windows：返回 pwsh Profile.CurrentUserAllHosts 路径（不要求存在）', () => {
     const files = rcFiles('windows', 'C:\\Users\\tester');
     expect(files).toEqual([
-      win32.join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
+      join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
     ]);
   });
 
