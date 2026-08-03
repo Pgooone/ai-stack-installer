@@ -56,7 +56,12 @@ async function ensureOne(tool: ToolSpec, ctx: PrereqContext): Promise<boolean> {
   if (tool.id === 'node') return installNode(ctx);
   const cmd = installCmd(tool, ctx.platform, ctx.cnMode ?? false);
   if (!cmd) return false; // 该平台无安装命令
-  const r = await exec(cmd);
+  let r = await exec(cmd);
+  // 主通道失败且有 fallback（如 pwsh MSI 下载失败降级 winget）
+  if (r.code !== 0 && tool.fallback) {
+    log(`主通道安装 ${tool.id} 失败，降级：${tool.fallback}`);
+    r = await exec(tool.fallback);
+  }
   if (r.code !== 0) return false;
   // 安装后复查：winget 对已装旧版本返回「已存在」退出码 0 但不升级，
   // 不复查会假成功（如 pwsh 版本低于 minVersion 却报「就绪」）
@@ -64,7 +69,7 @@ async function ensureOne(tool: ToolSpec, ctx: PrereqContext): Promise<boolean> {
   if (!after.installed) {
     fail(`前置依赖 ${tool.id} 安装后仍不满足版本要求（当前 ${after.version ?? '未知'}，要求 ≥${tool.minVersion ?? ''}）`);
     if (tool.id === 'pwsh') {
-      fail('提示：请手动执行 winget upgrade --id Microsoft.PowerShell 或从 https://github.com/PowerShell/PowerShell/releases 更新');
+      fail('提示：请检查网络（GitHub Releases 需代理）或从 https://github.com/PowerShell/PowerShell/releases 手动安装 MSI');
     }
   }
   return after.installed;

@@ -243,6 +243,42 @@ describe('ensurePrereqs（onlyOnWindows：非 Windows 平台跳过）', () => {
     const r = await ensurePrereqs({ manifest: manifestWithPwsh, platform: 'windows', home });
     expect(r.failed).toEqual(['pwsh']);
     expect(pwshChecks).toBe(2); // 安装前检查 + 安装后复查（不假成功）
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('winget upgrade --id Microsoft.PowerShell'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('GitHub Releases 需代理'));
+  });
+
+  it('主通道失败且有 fallback：降级执行 fallback（pwsh MSI 失败 → winget）', async () => {
+    const m: Manifest = {
+      prereq: [
+        { id: 'node', bin: 'node', check: 'node -v', minVersion: '20.0.0' },
+        {
+          id: 'pwsh',
+          bin: 'pwsh',
+          check: 'pwsh -v',
+          minVersion: '7.0.0',
+          onlyOnWindows: true,
+          windows: 'MSI 安装命令',
+          fallback: 'winget install --id Microsoft.PowerShell -e --silent',
+        },
+      ],
+      agents: [],
+    };
+    const calls: string[] = [];
+    let pwshChecks = 0;
+    setExecForTest(async (cmd) => {
+      calls.push(cmd);
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') {
+        pwshChecks++;
+        return pwshChecks === 1
+          ? { code: 127, stdout: '', stderr: 'not found' }
+          : { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
+      }
+      if (cmd === 'MSI 安装命令') return { code: 1, stdout: '', stderr: 'download failed' }; // 主通道失败
+      if (cmd === 'winget install --id Microsoft.PowerShell -e --silent') return { code: 0, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePrereqs({ manifest: m, platform: 'windows', home });
+    expect(r.failed).toEqual([]);
+    expect(calls).toEqual(['node -v', 'pwsh -v', 'MSI 安装命令', 'winget install --id Microsoft.PowerShell -e --silent', 'pwsh -v']);
   });
 });

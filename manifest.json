@@ -9,8 +9,9 @@
       "upgrade": "sudo apt-get install --only-upgrade -y git", "upgradeMacos": "brew upgrade git",
       "upgradeWindows": "winget upgrade --id Git.Git -e --silent --accept-source-agreements --accept-package-agreements" },
     { "id": "pwsh", "bin": "pwsh", "check": "pwsh -v", "minVersion": "7.0.0", "onlyOnWindows": true,
-      "windows": "winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements",
-      "upgradeWindows": "winget upgrade --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements" }
+      "windows": "$ErrorActionPreference='Stop'; $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest' -Headers @{ 'User-Agent'='ai-stack-installer' }; $tag = $rel.tag_name; $ver = $tag.TrimStart('v'); $msi = \"$env:TEMP\\pwsh-$ver-win-x64.msi\"; Invoke-WebRequest -Uri \"https://github.com/PowerShell/PowerShell/releases/download/$tag/PowerShell-$ver-win-x64.msi\" -OutFile $msi; Start-Process msiexec -ArgumentList \"/i `\"$msi`\" /quiet /norestart ADD_PATH=1 ENABLE_PSREMOTING=1\" -Wait; Remove-Item $msi -Force",
+      "fallback": "winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements",
+      "upgradeWindows": "$ErrorActionPreference='Stop'; $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest' -Headers @{ 'User-Agent'='ai-stack-installer' }; $tag = $rel.tag_name; $ver = $tag.TrimStart('v'); $msi = \"$env:TEMP\\pwsh-$ver-win-x64.msi\"; Invoke-WebRequest -Uri \"https://github.com/PowerShell/PowerShell/releases/download/$tag/PowerShell-$ver-win-x64.msi\" -OutFile $msi; Start-Process msiexec -ArgumentList \"/i `\"$msi`\" /quiet /norestart ADD_PATH=1 ENABLE_PSREMOTING=1\" -Wait; Remove-Item $msi -Force" }
   ],
   "agents": [
     { "id": "claude-code", "bin": "claude", "check": "claude --version", "needsProxy": true,
