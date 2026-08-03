@@ -82,6 +82,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 3. 透明性提示
-Write-Log "安装脚本位置：$PSCommandPath（本脚本仅用于拉起安装，可随时删除）"
 Write-Log '卸载请运行：ai-stack uninstall'
+# 4. 执行完毕自动清理本入口脚本（保持下次使用最新版）；AI_STACK_KEEP=1 可保留
+if ($env:AI_STACK_KEEP -ne '1' -and (Test-Path $PSCommandPath)) {
+  Remove-Item $PSCommandPath -Force -ErrorAction SilentlyContinue
+  Write-Log "已清理入口脚本 $PSCommandPath（设置 AI_STACK_KEEP=1 可保留）"
+}
 exit $rc

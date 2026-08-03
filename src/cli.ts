@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // CLI 入口：参数解析/模式选择/子命令分派/main 错误处理（依赖：全部模块）
-import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { rm } from 'node:fs/promises';
 import { installAgent } from './agents.js';
 import { printFileReport, writeAliasBlock, writeConfigFiles } from './configure.js';
 import { detect, detectTools } from './detect.js';
@@ -111,6 +114,8 @@ export function decideInteractive(opts: Pick<CliOptions, 'yes' | 'interactive'>)
 /** 顶层入口：main() 内 catch 全部错误，红字输出并返回退出码 */
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   try {
+    // 每次执行显示版本号，便于识别是否命中 npx 旧缓存
+    console.log(`ai-stack v${packageVersion()}`);
     if (argv.includes('-h') || argv.includes('--help')) {
       console.log(USAGE);
       return 0;
@@ -128,6 +133,38 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   } catch (err) {
     await fail(`错误：${(err as Error).message}`);
     return 1;
+  } finally {
+    await cleanupNpxCache(process.argv[1]); // 执行完毕自动清理 npx 缓存（保持下次拉最新版）
+  }
+}
+
+/** 从 package.json 读版本（dist/ 与 src/ 深度不同，向上查找） */
+function packageVersion(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 4; i++) {
+    try {
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { version?: string };
+      if (pkg.version) return pkg.version;
+    } catch {
+      /* 继续向上 */
+    }
+    dir = dirname(dir);
+  }
+  return 'unknown';
+}
+
+/** 执行完毕自动清理 npx 缓存中的本包目录（下次 npx 重新拉取最新版）；仅当从 _npx 缓存运行且非测试/本地包 */
+export async function cleanupNpxCache(entry: string | undefined): Promise<void> {
+  if (!entry) return;
+  const norm = entry.replace(/\\/g, '/');
+  if (!norm.includes('/_npx/')) return; // 非 npx 缓存运行（本地 dist / 全局安装）不清理
+  // entry = .../_npx/<hash>/node_modules/ai-stack-installer/dist/cli.js → 上溯 4 层到 <hash>
+  const cacheDir = dirname(dirname(dirname(dirname(entry))));
+  try {
+    await rm(cacheDir, { recursive: true, force: true });
+    await log(`已清理 npx 缓存（${cacheDir}），下次将拉取最新版`);
+  } catch {
+    /* 清理失败不影响结果 */
   }
 }
 

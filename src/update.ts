@@ -103,7 +103,7 @@ export async function updatePrereqs(ctx: UpdateContext, only?: string[]): Promis
           result.skipped.push(tool.id);
         }
       } else {
-        fail(`更新 ${tool.id} 失败：${errorTail(r.stderr)}`);
+        fail(`更新 ${tool.id} 失败：${errorTail(r)}`);
         result.failed.push(tool.id);
       }
       continue;
@@ -121,10 +121,12 @@ export async function updatePrereqs(ctx: UpdateContext, only?: string[]): Promis
 
 const ERR_TAIL_MAX = 300;
 
-function errorTail(stderr: string): string {
-  const s = stderr.trim();
-  if (!s) return '(无错误输出)';
-  return s.length > ERR_TAIL_MAX ? `...${s.slice(-ERR_TAIL_MAX)}` : s;
+/** 失败诊断：winget 等工具的错误常输出到 stdout 而非 stderr，两者都显示 */
+function errorTail(r: { stdout: string; stderr: string }): string {
+  const parts = [r.stderr.trim(), r.stdout.trim()].filter(Boolean);
+  if (parts.length === 0) return '(无错误输出)';
+  const joined = parts.join(' | ');
+  return joined.length > ERR_TAIL_MAX ? `...${joined.slice(-ERR_TAIL_MAX)}` : joined;
 }
 
 /** 按平台选升级命令：windows 优先 upgradeWindows，macos 优先 upgradeMacos，其余回退 upgrade */

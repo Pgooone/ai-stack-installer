@@ -80,18 +80,18 @@ if [ -n "${AI_STACK_PKG:-}" ]; then
   exit $?
 fi
 
-log "执行：npx -y ai-stack-installer $*"
-if npx -y ai-stack-installer "$@"; then
+log "执行：npx -y ai-stack-installer@latest $*"
+if npx -y ai-stack-installer@latest "$@"; then
   rc=0
 elif [ "$REGISTRY" = "https://registry.npmjs.org" ]; then
   # 官方源失败（可能是网络波动/被墙），切镜像重试一次
   log "npmjs.org 拉取失败，改用 npmmirror 镜像重试"
   export npm_config_registry="https://registry.npmmirror.com"
-  if npx -y ai-stack-installer "$@"; then
+  if npx -y ai-stack-installer@latest "$@"; then
     rc=0
   else
     log "npx 执行失败，回退全局安装（镜像）..."
-    if npm i -g ai-stack-installer >/dev/null 2>&1; then
+    if npm i -g ai-stack-installer@latest >/dev/null 2>&1; then
       log "执行：ai-stack $*"
       ai-stack "$@"
       rc=$?
@@ -102,7 +102,7 @@ elif [ "$REGISTRY" = "https://registry.npmjs.org" ]; then
   fi
 else
   log "npx 执行失败（镜像源），回退全局安装..."
-  if npm i -g ai-stack-installer >/dev/null 2>&1; then
+  if npm i -g ai-stack-installer@latest >/dev/null 2>&1; then
     log "执行：ai-stack $*"
     ai-stack "$@"
     rc=$?
@@ -113,6 +113,10 @@ else
 fi
 
 # 3. 透明性提示
-log "安装脚本位置：$0（本脚本仅用于拉起安装，可随时删除）"
 log "卸载请运行：ai-stack uninstall"
+# 4. 执行完毕自动清理本入口脚本（保持下次使用最新版）；AI_STACK_KEEP=1 可保留
+if [ "${AI_STACK_KEEP:-0}" != "1" ] && [ -f "$0" ]; then
+  rm -f "$0" 2>/dev/null
+  log "已清理入口脚本 $0（设置 AI_STACK_KEEP=1 可保留）"
+fi
 exit "$rc"

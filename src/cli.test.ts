@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanupNpxCache } from './cli.js';
 import { setLoggerHome } from './logger.js';
 import * as utils from './utils.js';
 
@@ -310,5 +311,38 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     const out = spy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(out).toContain('错误');
     expect(out).toContain('minimal 或 full');
+  });
+});
+
+describe('cleanupNpxCache（执行完毕自动清理，保持下次拉最新版）', () => {
+  let tmpRoot: string;
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(os.tmpdir(), 'ai-stack-npx-'));
+  });
+
+  afterEach(async () => {
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('从 npx 缓存运行：删除整个 <hash> 缓存目录', async () => {
+    // 模拟 .../_npx/<hash>/node_modules/ai-stack-installer/dist/cli.js
+    const pkgDir = join(tmpRoot, '_npx', 'abc123', 'node_modules', 'ai-stack-installer');
+    await mkdir(join(pkgDir, 'dist'), { recursive: true });
+    await cleanupNpxCache(join(pkgDir, 'dist', 'cli.js'));
+    // <hash> 目录整个被删除
+    await expect(rm(join(tmpRoot, '_npx', 'abc123'), { recursive: true, force: false })).rejects.toThrow();
+  });
+
+  it('非 npx 缓存路径（本地 dist / 全局安装）：不清理', async () => {
+    const f = join(tmpRoot, 'local', 'cli.js');
+    await mkdir(join(tmpRoot, 'local'), { recursive: true });
+    await writeFile(f, 'x');
+    await cleanupNpxCache(f);
+    await expect(readFile(f, 'utf8')).resolves.toBe('x'); // 文件保留
+  });
+
+  it('无入口参数：跳过', async () => {
+    await expect(cleanupNpxCache(undefined)).resolves.toBeUndefined();
   });
 });
