@@ -241,6 +241,16 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     expect(mocks.detectTools).toHaveBeenCalledTimes(1);
   });
 
+  it('list 退出码：仅 optIn 工具（CC Switch）未装是预期状态 → 0', async () => {
+    mocks.detectTools.mockResolvedValue([
+      { id: 'node', bin: 'node', installed: true, version: 'v22.5.0' },
+      { id: 'claude-code', bin: 'claude', installed: true, version: '2.1.0' },
+      { id: 'cc-switch', bin: 'cc-switch', installed: false },
+    ]);
+    const code = await main(['list']);
+    expect(code).toBe(0);
+  });
+
   it('uninstall 子命令：转交 runUninstall（含 yes 透传），退出码 130（交互取消）', async () => {
     mocks.runUninstall.mockResolvedValue(130);
     const code = await main(['uninstall']);
