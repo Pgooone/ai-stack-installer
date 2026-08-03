@@ -8,21 +8,24 @@ import { detectTty } from './utils.js';
 const ANSI = {
   cyan: '[36m',
   green: '[32m',
+  yellow: '[33m',
   red: '[31m',
   reset: '[0m',
 } as const;
 
-type Level = 'log' | 'ok' | 'fail';
+type Level = 'log' | 'ok' | 'warn' | 'fail';
 
 const PREFIX: Record<Level, string> = {
   log: '',
   ok: '✓ ',
+  warn: '⚠ ',
   fail: '✗ ',
 };
 
 const COLOR: Record<Level, keyof typeof ANSI> = {
   log: 'cyan',
   ok: 'green',
+  warn: 'yellow',
   fail: 'red',
 };
 
@@ -65,4 +68,8 @@ export function ok(msg: string): Promise<void> {
 
 export function fail(msg: string): Promise<void> {
   return write('fail', msg);
+}
+
+export function warn(msg: string): Promise<void> {
+  return write('warn', msg);
 }

@@ -1,12 +1,13 @@
-// 卸载：交互确认 → 逐工具卸载 → 移除 rc 标记块 → 删 installed.json 清单内文件 → 删 ~/.ai-stack
+// 卸载：交互确认 → 只卸本脚本安装的工具 → 移除 rc 标记块 → 删 hash 匹配的文件 → 删 ~/.ai-stack
+// 卸载安全：用户原有的工具、被修改过的配置一律保留（绝不误删导致环境崩溃）
 // 依赖：agents, configure, fs-locations, installed, logger, clack, types
 import { rm } from 'node:fs/promises';
 import { confirm, isCancel } from '@clack/prompts';
 import { uninstallAgent } from './agents.js';
 import { printFileReport, removeAliasBlock } from './configure.js';
 import { aiStackDir } from './fs-locations.js';
-import { readInstalledJson } from './installed.js';
-import { log, ok } from './logger.js';
+import { readInstalledJson, removeRecordedFiles } from './installed.js';
+import { log, ok, warn } from './logger.js';
 import type { Manifest, Platform } from './types.js';
 import { detectTty } from './utils.js';
 
@@ -27,7 +28,7 @@ export async function runUninstall(ctx: UninstallContext): Promise<number> {
       return 0;
     }
     const confirmed = await confirm({
-      message: '确认卸载全部工具与配置？此操作不可撤销（Node/Git 等通用依赖不会卸载）',
+      message: '确认卸载本脚本安装的工具与配置？此操作不可撤销（仅影响本脚本安装的内容）',
       initialValue: false,
     });
     if (isCancel(confirmed)) return 130;
@@ -37,24 +38,31 @@ export async function runUninstall(ctx: UninstallContext): Promise<number> {
     }
   }
 
-  // 2. 逐工具卸载（agents + optInAgents）
-  const tools = [...ctx.manifest.agents, ...(ctx.manifest.optInAgents ?? [])];
-  for (const tool of tools) {
+  // 2. 只卸 installed.json 记录的本脚本安装的工具（用户原有的绝不卸载）
+  const record = await readInstalledJson(ctx.home);
+  const installedIds = new Set(record?.tools ?? []);
+  const all = [...ctx.manifest.agents, ...(ctx.manifest.optInAgents ?? [])];
+  const mine = all.filter((t) => installedIds.has(t.id));
+  if (record && installedIds.size > 0 && mine.length === 0) {
+    await warn('installed.json 记录了已安装工具，但 manifest 中未找到对应条目，跳过工具卸载');
+  }
+  if (installedIds.size === 0) {
+    await log('未检测到本脚本安装的工具（installed.json 缺失或为旧版本），跳过工具卸载');
+    if (record === null) {
+      await warn('提示：旧版 installed.json 无工具记录，无法区分工具来源；为避免误删请手动卸载。');
+    }
+  }
+  for (const tool of mine) {
     await uninstallAgent(tool, ctx.platform);
   }
 
   // 3. 移除 rc 标记块（writeAliasBlock 的反向操作）
   await removeAliasBlock(ctx.platform, ctx.home);
 
-  // 4. 删 installed.json 清单内的文件（只删清单内的；清单缺失容错）
-  const record = await readInstalledJson(ctx.home);
-  if (record) {
-    for (const file of record.files) {
-      await rm(file, { force: true }); // force：文件不存在不报错
-      await ok(`删除 ${file}`);
-    }
-  } else {
-    await log('未找到 installed.json，跳过配置文件删除');
+  // 4. 删记录内文件（hash 校验：被用户修改过的保留并警告）
+  const { kept } = await removeRecordedFiles(record, log, ok, warn);
+  if (kept.length > 0) {
+    await warn(`有 ${kept.length} 个文件因内容与安装时不同被保留（可能被修改过），请自行确认后手动删除`);
   }
 
   // 5. 删 ~/.ai-stack（日志与安装记录）

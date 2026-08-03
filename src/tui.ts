@@ -26,6 +26,8 @@ export interface WizardResult {
   cancelled: boolean;
   /** configure 实际写入的配置文件（写 installed.json 用） */
   writtenFiles: string[];
+  /** 本向导实际安装的工具 id（skipped 的用户已有工具不记录） */
+  installedTools: string[];
   /** doctor 汇总退出码：有工具未就绪时为 1 */
   doctorCode: number;
 }
@@ -88,11 +90,11 @@ async function executeUpdate(ctx: WizardContext, cnMode: CnMode): Promise<Wizard
   spin.stop(pre.failed.length === 0 ? '系统组件更新完成' : `更新失败：${pre.failed.join(', ')}`);
   const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled, ctx.platform);
   await printFileReport(ctx.platform, ctx.home);
-  return { cancelled: false, writtenFiles: [], doctorCode };
+  return { cancelled: false, writtenFiles: [], installedTools: [], doctorCode };
 }
 
 function cancelledResult(): WizardResult {
-  return { cancelled: true, writtenFiles: [], doctorCode: 0 };
+  return { cancelled: true, writtenFiles: [], installedTools: [], doctorCode: 0 };
 }
 
 // ---- ① 工具多选：预选未装的非 optIn 工具，已装的置灰并标版本 ----
@@ -241,6 +243,7 @@ async function execute(
   });
   spin.stop(pre.failed.length === 0 ? '前置依赖就绪' : `前置依赖：${pre.failed.join(', ')} 安装失败`);
 
+  const installedTools: string[] = [];
   for (const tool of tools) {
     const outcome = await installWithRetry(tool, ctx, cnMode, spin);
     if (outcome === 'cancelled') return cancelledResult();
@@ -248,6 +251,7 @@ async function execute(
       clackLog.message('已终止后续安装，保留已装部分');
       break;
     }
+    if (outcome === 'ok') installedTools.push(tool.id); // 仅记录实际安装的
   }
 
   const { written } = await writeConfigFiles(ctx.platform, false, ctx.home);
@@ -255,7 +259,7 @@ async function execute(
 
   const doctorCode = await runDoctor(ctx.manifest, cnMode.enabled, ctx.platform);
   await printFileReport(ctx.platform, ctx.home);
-  return { cancelled: false, writtenFiles: written, doctorCode };
+  return { cancelled: false, writtenFiles: written, installedTools, doctorCode };
 }
 
 /** 安装单个工具：失败时 select 三选一（重试/跳过/终止），重试可反复；Ctrl+C 整体取消 */

@@ -162,11 +162,24 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     expect(mocks.installAgent.mock.calls[0][1].cnMode.enabled).toBe(false);
   });
 
-  it('install -y：installed.json 记录本脚本创建的文件清单', async () => {
+  it('install -y：installed.json 记录本脚本安装的工具与文件（v2）', async () => {
     await main(['install', '-y']);
     const record = JSON.parse(await readFile(join(home, '.ai-stack', 'installed.json'), 'utf8'));
-    expect(record.version).toBe(1);
-    expect(record.files).toEqual([join(home, '.claude', 'settings.json'), join(home, '.codex', 'config.toml')]);
+    expect(record.version).toBe(2);
+    // 本用例 mock 的 installAgent 全返回 ok → 4 个工具都记录
+    expect(record.tools).toEqual(['claude-code', 'codex', 'pi', 'opencode']);
+    // 文件带 hash（mock 文件不存在 → hash 为 null/undefined 序列化后消失——检查 path 结构）
+    expect(record.files.map((f: { path: string }) => f.path)).toEqual([
+      join(home, '.claude', 'settings.json'),
+      join(home, '.codex', 'config.toml'),
+    ]);
+  });
+
+  it('install -y：installAgent 返回 skipped 的工具（用户已有）不记录', async () => {
+    mocks.installAgent.mockResolvedValue('skipped');
+    await main(['install', '-y']);
+    const record = JSON.parse(await readFile(join(home, '.ai-stack', 'installed.json'), 'utf8'));
+    expect(record.tools).toEqual([]); // 全为已有 → 不记录任何工具
   });
 
   it('install -y -p minimal：只装 claude-code', async () => {
@@ -198,10 +211,11 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     ]);
   });
 
-  it('install -i（交互）：runWizard 完成后再写 installed.json，返回 doctor 退出码', async () => {
+  it('install -i（交互）：runWizard 完成后再写 installed.json（工具+文件），返回 doctor 退出码', async () => {
     mocks.runWizard.mockResolvedValue({
       cancelled: false,
       writtenFiles,
+      installedTools: ['codex'],
       doctorCode: 0,
     });
     const code = await main(['install', '-i']);
@@ -210,17 +224,18 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     // 向导内部已做配置写入，cli 只补 installed.json
     expect(mocks.writeConfigFiles).not.toHaveBeenCalled();
     const record = JSON.parse(await readFile(join(home, '.ai-stack', 'installed.json'), 'utf8'));
-    expect(record.files).toEqual(writtenFiles);
+    expect(record.tools).toEqual(['codex']);
+    expect(record.files.map((f: { path: string }) => f.path)).toEqual(writtenFiles);
   });
 
   it('install -i 且向导取消（clack cancel）→ 退出码 130', async () => {
-    mocks.runWizard.mockResolvedValue({ cancelled: true, writtenFiles: [], doctorCode: 0 });
+    mocks.runWizard.mockResolvedValue({ cancelled: true, writtenFiles: [], installedTools: [], doctorCode: 0 });
     const code = await main(['install', '-i']);
     expect(code).toBe(130);
   });
 
   it('install -i --cn：向导收到 cnForced，不再询问网络', async () => {
-    mocks.runWizard.mockResolvedValue({ cancelled: false, writtenFiles: [], doctorCode: 0 });
+    mocks.runWizard.mockResolvedValue({ cancelled: false, writtenFiles: [], installedTools: [], doctorCode: 0 });
     await main(['install', '-i', '--cn']);
     const ctx = mocks.runWizard.mock.calls[0][0];
     expect(ctx.cnForced.enabled).toBe(true);

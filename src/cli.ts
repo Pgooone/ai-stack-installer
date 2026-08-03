@@ -5,7 +5,7 @@ import { installAgent } from './agents.js';
 import { printFileReport, writeAliasBlock, writeConfigFiles } from './configure.js';
 import { detect, detectTools } from './detect.js';
 import { runDoctor } from './doctor.js';
-import { writeInstalledJson } from './installed.js';
+import { hashFile, writeInstalledJson } from './installed.js';
 import { fail, log } from './logger.js';
 import { getAgent, loadManifest } from './manifest.js';
 import { ensurePrereqs } from './prereq.js';
@@ -156,9 +156,18 @@ async function runInstallWizard(opts: CliOptions, env: CliEnv, manifest: Manifes
     cnForced: opts.cn ? defaultCnMode(true) : undefined,
   });
   if (result.cancelled) return 130; // clack cancel（Ctrl+C）
-  await writeInstalledJson(env.home, result.writtenFiles);
+  await writeInstalledJson(env.home, await hashFiles(result.writtenFiles), result.installedTools);
   if (result.doctorCode !== 0) await fail('部分工具未就绪（doctor 结果见上），退出码 1');
   return result.doctorCode;
+}
+
+/** 对刚写入的文件计算内容 hash（卸载时校验用；读不到的跳过） */
+async function hashFiles(paths: string[]): Promise<{ path: string; hash?: string }[]> {
+  const out: { path: string; hash?: string }[] = [];
+  for (const p of paths) {
+    out.push({ path: p, hash: await hashFile(p) });
+  }
+  return out;
 }
 
 // ---- install（直装）：prereq → 逐个安装（失败跳过继续）→ 配置 → doctor → 文件清单 → installed.json ----
@@ -171,14 +180,16 @@ async function runInstallDirect(opts: CliOptions, env: CliEnv, manifest: Manifes
       ? [getAgent(manifest, 'claude-code')].filter((t): t is NonNullable<typeof t> => t !== undefined)
       : manifest.agents.filter((t) => t.optIn !== true);
   await ensurePrereqs({ manifest, platform: env.platform, home: env.home, cnMode: cnMode.enabled });
+  const installedTools: string[] = [];
   for (const tool of targets) {
-    await installAgent(tool, { platform: env.platform, cnMode });
+    const r = await installAgent(tool, { platform: env.platform, cnMode });
+    if (r === 'ok') installedTools.push(tool.id); // 仅记录实际安装的，用户已有（skipped）绝不记录
   }
   const { written } = await writeConfigFiles(env.platform, false, env.home);
   await writeAliasBlock(env.platform, env.home);
   const doctorCode = await runDoctor(manifest, cnMode.enabled, env.platform);
   await printFileReport(env.platform, env.home);
-  await writeInstalledJson(env.home, written);
+  await writeInstalledJson(env.home, await hashFiles(written), installedTools);
   if (doctorCode !== 0) await fail('部分工具未就绪（doctor 结果见上），退出码 1');
   return doctorCode;
 }

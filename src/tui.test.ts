@@ -162,6 +162,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
     expect(result).toEqual({
       cancelled: false,
       writtenFiles: [join(home, '.claude', 'settings.json'), join(home, '.codex', 'config.toml')],
+      installedTools: ['codex', 'cc-switch'],
       doctorCode: 0,
     });
   });
@@ -283,7 +284,7 @@ describe('runWizard（mock 每个 prompt 返回序列，验证 6 步顺序与分
   it('功能选择被取消（clack cancel）→ cancelled=true', async () => {
     mocks.select.mockResolvedValueOnce(mocks.CANCEL);
     const result = await runWizard({ manifest: makeManifest(), platform: 'linux', home, states: makeStates() });
-    expect(result).toEqual({ cancelled: true, writtenFiles: [], doctorCode: 0 });
+    expect(result).toEqual({ cancelled: true, writtenFiles: [], installedTools: [], doctorCode: 0 });
   });
 
   it('功能选择「更新系统组件」：只更新不装 Agent，跳过工具多选/cc-switch/汇总', async () => {
