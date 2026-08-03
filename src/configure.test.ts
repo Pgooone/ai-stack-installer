@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import { join, win32 } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   collectFileReport,
@@ -117,7 +117,7 @@ describe('writeAliasBlock（标记块幂等）', () => {
 
   it('windows：写入 $PROFILE（Profile.CurrentUserAllHosts），内容用 PowerShell 语法', async () => {
     const r = await writeAliasBlock('windows', home);
-    expect(r.rcFile).toBe(win32.join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'));
+    expect(r.rcFile).toBe(join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'));
     expect(r.action).toBe('written');
     const content = await readFile(r.rcFile, 'utf8');
     expect(content).toContain(markers.start);
@@ -139,7 +139,7 @@ describe('writeAliasBlock（标记块幂等）', () => {
 
   it('rcFileFor：windows 用 Profile 路径，其余平台用 .bashrc', () => {
     expect(rcFileFor('windows', 'C:\\Users\\tester')).toBe(
-      win32.join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
+      join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
     );
     expect(rcFileFor('linux', home)).toBe(join(home, '.bashrc'));
     expect(rcFileFor('macos', home)).toBe(join(home, '.bashrc'));
@@ -203,8 +203,8 @@ describe('removeAliasBlock（writeAliasBlock 的反向操作）', () => {
   });
 
   it('windows 平台移除 Profile 中的 PowerShell 标记块', async () => {
-    const rc = win32.join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1');
-    await mkdir(win32.dirname(rc), { recursive: true });
+    const rc = join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1');
+    await mkdir(dirname(rc), { recursive: true });
     await writeFile(rc, '# >>> ai-stack >>>\nSet-Alias -Name c -Value claude\n# <<< ai-stack <<<\n');
     const r = await removeAliasBlock('windows', home);
     expect(r.rcFile).toBe(rc);
@@ -229,7 +229,7 @@ describe('collectFileReport', () => {
   it('windows 平台 rc 文件为 Profile 路径', async () => {
     const report = await collectFileReport('windows', 'C:\\Users\\tester');
     expect(report[2].path).toBe(
-      win32.join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
+      join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
     );
   });
 });
