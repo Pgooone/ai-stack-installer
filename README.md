@@ -65,6 +65,28 @@ MSI 下载失败时自动降级 winget。需代理访问 GitHub Releases。
 - 若安装了 Windows Terminal，将其 `defaultProfile` 设为 PowerShell 7（保留你已有的配置与注释）
 - pwsh profile 写入 UTF-8 编码设置（防中文乱码）
 
+## 升级与清缓存
+
+脚本每次运行会显示版本号并自动检查新版本（发现新版会提示）：
+
+```powershell
+# 一键升级（清缓存 + 全局安装最新版）
+ai-stack self-update
+
+# 或直接跑最新版（绕开本地旧入口脚本）
+npx -y ai-stack-installer@latest
+```
+
+**如果一直跑旧版本**（版本号没变），是 npx 缓存残留——`npm cache clean` **清不掉** `_npx` 目录（独立缓存），需要手动清：
+
+```powershell
+# 清 npx 缓存（关键命令）
+Remove-Item "$env:LOCALAPPDATA\npm-cache\_npx" -Recurse -Force
+```
+
+> 新版本脚本执行完毕会自动清理 npx 缓存 + 入口脚本（`AI_STACK_KEEP=1` 可保留），
+> 正常使用不会累积旧缓存；只有早期版本残留才需要手动清一次。
+
 ## 参数
 
 | 参数 | 说明 |
