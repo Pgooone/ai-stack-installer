@@ -2,7 +2,7 @@
 import { fail, log, ok } from './logger.js';
 import { installCmd, stateOf } from './manifest.js';
 import type { Manifest, Platform, ToolSpec } from './types.js';
-import { exec } from './utils.js';
+import { exec, versionGte } from './utils.js';
 
 export interface UpdateContext {
   manifest: Manifest;
@@ -52,7 +52,22 @@ export async function detectUpdates(ctx: UpdateContext): Promise<UpdateCheck[]> 
       out.push({ tool, current, hasUpdate: undefined }); // 非 Windows 平台检测机制暂缺
       continue;
     }
-    const id = /--id (\S+)/.exec(upgradeCmd(tool, ctx.platform)!)?.[1];
+    const cmd = upgradeCmd(tool, ctx.platform)!;
+    // GitHub Releases 类命令（如 pwsh MSI 安装链）：查询 API 最新版与当前比较
+    // 注意仓库名含斜杠（PowerShell/PowerShell），分隔符只能用引号/空白
+    const apiMatch = /https:\/\/api\.github\.com\/repos\/([^'"\s]+)\/releases\/latest/.exec(cmd);
+    if (apiMatch) {
+      const api = `powershell -NoProfile -Command "((Invoke-RestMethod -Uri 'https://api.github.com/repos/${apiMatch[1]}/releases/latest' -Headers @{'User-Agent'='ai-stack-installer'}).tag_name).TrimStart('v')"`;
+      const ar = await exec(api);
+      const latest = ar.code === 0 ? ar.stdout.trim() : '';
+      if (latest && current) {
+        out.push({ tool, current, hasUpdate: !versionGte(current, latest) && current !== latest });
+        continue;
+      }
+      out.push({ tool, current, hasUpdate: undefined }); // API 查询失败 → 无法检测
+      continue;
+    }
+    const id = /--id (\S+)/.exec(cmd)?.[1];
     if (!id) {
       out.push({ tool, current, hasUpdate: undefined });
       continue;

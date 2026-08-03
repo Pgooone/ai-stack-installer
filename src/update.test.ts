@@ -234,6 +234,58 @@ describe('detectUpdates（winget --dry-run 退出码判断可用更新）', () =
     expect(r.every((c) => c.hasUpdate === undefined)).toBe(true);
   });
 
+  it('GitHub Releases 类命令（pwsh MSI 链）：API 查最新版与当前比较', async () => {
+    const m = makeManifest();
+    // pwsh 用 MSI 命令链（含 api.github.com，无 --id——不走 winget dry-run）
+    m.prereq = [
+      { ...m.prereq[0], upgradeWindows: 'winget upgrade --id OpenJS.NodeJS.LTS -e --silent' },
+      {
+        ...m.prereq[1],
+        upgradeWindows:
+          "$q = if ($env:AI_STACK_INTERACTIVE -eq '1') { '' } else { '/quiet /norestart' }; $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest' -Headers @{ 'User-Agent'='ai-stack-installer' }; $tag = $rel.tag_name; $ver = $tag.TrimStart('v'); Start-Process msiexec -ArgumentList \"/i `\"$msi`\" $q\" -Wait",
+      },
+      m.prereq[2],
+    ];
+    setExecForTest(async (cmd) => {
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
+      if (cmd.includes('api.github.com')) return { code: 0, stdout: 'v7.6.5\n', stderr: '' }; // 最新 7.6.5 > 7.6.4
+      if (cmd.includes('winget upgrade --id OpenJS.NodeJS.LTS --dry-run'))
+        return { code: -1978335189, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await detectUpdates({ manifest: m, platform: 'windows', home });
+    const pwsh = r.find((c) => c.tool.id === 'pwsh');
+    expect(pwsh?.hasUpdate).toBe(true); // 7.6.5 > 7.6.4 → 有更新
+    const node = r.find((c) => c.tool.id === 'node');
+    expect(node?.hasUpdate).toBe(false);
+  });
+
+  it('GitHub API 查询失败：标记无法检测（不误判）', async () => {
+    const m = makeManifest();
+    m.prereq = [
+      { ...m.prereq[0], upgradeWindows: 'winget upgrade --id OpenJS.NodeJS.LTS -e --silent' },
+      {
+        ...m.prereq[1],
+        upgradeWindows: "Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest'",
+      },
+      m.prereq[2],
+    ];
+    setExecForTest(async (cmd) => {
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
+      if (cmd.includes('api.github.com')) return { code: 1, stdout: '', stderr: 'rate limit' };
+      if (cmd.includes('winget upgrade --id OpenJS.NodeJS.LTS --dry-run'))
+        return { code: -1978335189, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await detectUpdates({ manifest: m, platform: 'windows', home });
+    const pwsh = r.find((c) => c.tool.id === 'pwsh');
+    expect(pwsh?.hasUpdate).toBeUndefined(); // API 失败 → 无法检测
+  });
+
   it('未安装的组件：标记「需要安装」而非「已是最新」（winget dry-run 对未装包也返回非 0）', async () => {
     // 与产品 manifest 一致的 fixture：node/pwsh 带 upgradeWindows
     const m = makeManifest();
