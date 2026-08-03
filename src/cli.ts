@@ -182,7 +182,7 @@ async function runList(manifest: Manifest): Promise<number> {
     await log(`${s.id.padEnd(LIST_NAME_W)} | ${s.installed ? `✓ ${s.version ?? '已安装'}` : '✗ 未安装'}`);
   }
   // 退出码只计非 optIn 工具的缺失（optIn 未装是预期状态，如 CC Switch），与 doctor 同规则
-  const optInIds = new Set(manifest.optInAgents.map((t) => t.id));
+  const optInIds = new Set((manifest.optInAgents ?? []).map((t) => t.id));
   return states.every((s) => s.installed || optInIds.has(s.id)) ? 0 : 1;
 }
 
