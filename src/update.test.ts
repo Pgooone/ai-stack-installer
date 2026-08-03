@@ -17,7 +17,7 @@ function makeManifest(): Manifest {
         check: 'pwsh -v',
         minVersion: '7.0.0',
         onlyOnWindows: true,
-        windows: 'winget install',
+        windows: 'winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements',
         upgradeWindows: 'winget upgrade --id Microsoft.PowerShell',
       },
       { id: 'git', bin: 'git', check: 'git --version', linux: 'x', windows: 'x' }, // 无 upgrade
@@ -47,6 +47,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
     setExecForTest(async (cmd) => {
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
@@ -63,6 +64,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
       calls.push(cmd);
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
@@ -76,6 +78,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
     setExecForTest(async (cmd) => {
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
     const r = await updatePrereqs({ manifest: makeManifest(), platform: 'linux', home });
@@ -94,6 +97,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
           : { code: 127, stdout: '', stderr: 'not found' };
       }
       if (cmd === 'fnm install --lts') return { code: 1, stdout: '', stderr: 'registry timeout' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
@@ -114,6 +118,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
           : { code: 0, stdout: 'v18.0.0\n', stderr: '' };
       }
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
@@ -126,6 +131,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
     setExecForTest(async (cmd) => {
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
       if (cmd === 'fnm install --lts') return { code: 0, stdout: '', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
       if (cmd === 'winget upgrade --id Microsoft.PowerShell')
         return { code: -1978335189, stdout: '找不到可用的升级。', stderr: '' }; // 0x8A150019
@@ -147,6 +153,7 @@ describe('updatePrereqs（注入 exec mock + 临时 home）', () => {
           : { code: 0, stdout: 'v24.0.0\n', stderr: '' }; // 复查：已升级
       }
       if (cmd === 'fnm install --lts') return { code: 1, stdout: '', stderr: 'exit 5' }; // 非 0 但生效
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       if (cmd === 'winget upgrade --id Microsoft.PowerShell') return { code: 0, stdout: '', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
@@ -198,6 +205,7 @@ describe('detectUpdates（winget --dry-run 退出码判断可用更新）', () =
     setExecForTest(async (cmd) => {
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       if (cmd === 'winget upgrade --id OpenJS.NodeJS.LTS --dry-run --accept-source-agreements --accept-package-agreements')
         return { code: 0, stdout: '可用的升级', stderr: '' }; // 有更新
@@ -218,10 +226,63 @@ describe('detectUpdates（winget --dry-run 退出码判断可用更新）', () =
     setExecForTest(async (cmd) => {
       if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
       if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
       if (cmd === 'pwsh -v') return { code: 0, stdout: 'PowerShell 7.4.0\n', stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
     const r = await detectUpdates({ manifest: makeManifest(), platform: 'linux', home });
     expect(r.every((c) => c.hasUpdate === undefined)).toBe(true);
+  });
+
+  it('未安装的组件：标记「需要安装」而非「已是最新」（winget dry-run 对未装包也返回非 0）', async () => {
+    // 与产品 manifest 一致的 fixture：node/pwsh 带 upgradeWindows
+    const m = makeManifest();
+    m.prereq = [
+      { ...m.prereq[0], upgradeWindows: 'winget upgrade --id OpenJS.NodeJS.LTS -e --silent' },
+      m.prereq[1],
+      m.prereq[2],
+    ];
+    setExecForTest(async (cmd) => {
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') return { code: 127, stdout: '', stderr: 'not found' }; // pwsh 未安装
+      if (cmd.startsWith('winget upgrade --id OpenJS.NodeJS.LTS --dry-run'))
+        return { code: 0, stdout: '可用的升级', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await detectUpdates({ manifest: m, platform: 'windows', home });
+    const pwsh = r.find((c) => c.tool.id === 'pwsh');
+    expect(pwsh?.hasUpdate).toBe(true); // 未安装 → 需要安装
+    expect(pwsh?.current).toBeUndefined();
+  });
+
+  it('未安装的组件：updatePrereqs 走安装命令而非 upgrade（winget upgrade 对未装包无效）', async () => {
+    const calls: string[] = [];
+    let pwshChecks = 0;
+    setExecForTest(async (cmd) => {
+      calls.push(cmd);
+      if (cmd === 'node -v') return { code: 0, stdout: 'v22.5.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'git --version') return { code: 0, stdout: 'git version 2.43.0\n', stderr: '' };
+      if (cmd === 'pwsh -v') {
+        pwshChecks++;
+        // 安装前未装；安装后复查就绪
+        return pwshChecks === 1
+          ? { code: 127, stdout: '', stderr: 'not found' }
+          : { code: 0, stdout: 'PowerShell 7.6.4\n', stderr: '' };
+      }
+      if (cmd === 'winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements')
+        return { code: 0, stdout: '', stderr: '' };
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await updatePrereqs({ manifest: makeManifest(), platform: 'windows', home }, ['pwsh']);
+    expect(r.updated).toEqual(['pwsh']);
+    // 走 install 而非 upgrade（winget upgrade 对未装包无效）
+    expect(calls).toEqual([
+      'pwsh -v',
+      'winget install --id Microsoft.PowerShell -e --silent --accept-source-agreements --accept-package-agreements',
+      'pwsh -v',
+    ]);
   });
 });

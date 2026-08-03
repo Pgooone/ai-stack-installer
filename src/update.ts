@@ -1,6 +1,6 @@
-// 系统组件更新：检测可用更新 → 逐个 prereq 执行 upgrade 命令，执行后复查 stateOf（依赖：manifest, utils, logger）
+// 系统组件更新：检测可用更新 → 逐个 prereq 执行 upgrade/install 命令，执行后复查 stateOf（依赖：manifest, utils, logger）
 import { fail, log, ok } from './logger.js';
-import { stateOf } from './manifest.js';
+import { installCmd, stateOf } from './manifest.js';
 import type { Manifest, Platform, ToolSpec } from './types.js';
 import { exec } from './utils.js';
 
@@ -36,7 +36,14 @@ export async function detectUpdates(ctx: UpdateContext): Promise<UpdateCheck[]> 
   const out: UpdateCheck[] = [];
   for (const tool of ctx.manifest.prereq) {
     if (tool.onlyOnWindows === true && ctx.platform !== 'windows') continue;
-    const current = (await stateOf(tool)).version;
+    const state = await stateOf(tool);
+    const current = state.version;
+    // 未安装：需要安装（不是「已是最新」）；winget upgrade --dry-run 对未安装包
+    // 也返回非 0（找不到包），无法与「已最新」（0x8A150019）区分，必须先判断安装态
+    if (!state.installed) {
+      out.push({ tool, current, hasUpdate: true });
+      continue;
+    }
     if (!upgradeCmd(tool, ctx.platform)) {
       out.push({ tool, current, hasUpdate: undefined }); // 无升级命令，不参与更新
       continue;
@@ -65,14 +72,17 @@ export async function updatePrereqs(ctx: UpdateContext, only?: string[]): Promis
       result.skipped.push(tool.id);
       continue;
     }
-    const cmd = upgradeCmd(tool, ctx.platform);
+    const before = await stateOf(tool);
+    // 未安装 → 用安装命令（winget upgrade 对未安装的包无效会直接失败）；已安装 → upgrade
+    const cmd = before.installed
+      ? upgradeCmd(tool, ctx.platform)
+      : installCmd(tool, ctx.platform, ctx.cnMode ?? false);
     if (!cmd) {
-      log(`跳过 ${tool.id}：无升级命令`);
+      log(`跳过 ${tool.id}：无安装/升级命令`);
       result.skipped.push(tool.id);
       continue;
     }
-    const before = await stateOf(tool);
-    log(`更新 ${tool.id}（当前 ${before.version ?? '未知'} → 最新）`);
+    log(`更新 ${tool.id}（当前 ${before.installed ? before.version ?? '未知' : '未安装'} → ${before.installed ? '最新' : '安装最新'}）`);
     let r;
     try {
       r = await exec(cmd);
