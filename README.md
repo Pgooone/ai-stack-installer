@@ -57,6 +57,9 @@ ai-stack update --cn   # 走镜像/代理更新
 
 ### PowerShell 7 集成（Windows）
 
+**安装方式**：官方 **.msi** 安装包（GitHub Releases 下载 + 静默安装，含完整终端集成）——
+MSI 下载失败时自动降级 winget。需代理访问 GitHub Releases。
+
 安装/更新 PowerShell 后脚本自动执行（幂等）：
 - 把 PowerShell 7 路径（`C:\Program Files\PowerShell\7`）提升到**用户 PATH 首位**——确保新终端默认调用 pwsh 7 而非旧版
 - 若安装了 Windows Terminal，将其 `defaultProfile` 设为 PowerShell 7（保留你已有的配置与注释）
