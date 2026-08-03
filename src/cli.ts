@@ -9,7 +9,7 @@ import { printFileReport, writeAliasBlock, writeConfigFiles } from './configure.
 import { detect, detectTools } from './detect.js';
 import { runDoctor } from './doctor.js';
 import { hashFile, writeInstalledJson } from './installed.js';
-import { fail, log } from './logger.js';
+import { fail, log, ok } from './logger.js';
 import { getAgent, loadManifest } from './manifest.js';
 import { ensurePrereqs } from './prereq.js';
 import { defaultCnMode } from './proxy.js';
@@ -18,9 +18,9 @@ import { executeUpdate, runWizard } from './tui.js';
 import type { Manifest, Platform } from './types.js';
 import { runUninstall } from './uninstall.js';
 import { updatePrereqs } from './update.js';
-import { detectTty } from './utils.js';
+import { detectTty, exec, versionGte } from './utils.js';
 
-export type CliCommand = 'install' | 'doctor' | 'update' | 'uninstall' | 'list';
+export type CliCommand = 'install' | 'doctor' | 'update' | 'self-update' | 'uninstall' | 'list';
 export type Profile = 'minimal' | 'full';
 
 export interface CliOptions {
@@ -43,6 +43,7 @@ const USAGE = `ai-stack — AI Agent 一键安装脚本（跨平台）
 子命令:
   install      安装（默认）：探测 → 向导/直装 → 依赖 → 工具 → 配置 → 自检
   update       更新系统组件（Node / Git / PowerShell 升级到最新）后自检
+  self-update  升级脚本自身（清缓存 + 全局安装最新版）
   doctor       自检：输出各工具版本与状态（退出码：有未就绪为 1）
   uninstall    卸载：移除工具、配置与 ~/.ai-stack（默认交互确认）
   list         列出 manifest 工具清单与安装状态
@@ -97,7 +98,14 @@ export function parseArgs(argv: string[]): CliOptions {
   }
   const cmd = positional[0];
   if (cmd) {
-    if (cmd === 'install' || cmd === 'doctor' || cmd === 'update' || cmd === 'uninstall' || cmd === 'list') {
+    if (
+      cmd === 'install' ||
+      cmd === 'doctor' ||
+      cmd === 'update' ||
+      cmd === 'self-update' ||
+      cmd === 'uninstall' ||
+      cmd === 'list'
+    ) {
       opts.command = cmd;
     } else {
       throw new Error(`未知子命令：${cmd}`);
@@ -116,11 +124,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   try {
     // 每次执行显示版本号，便于识别是否命中 npx 旧缓存
     console.log(`ai-stack v${packageVersion()}`);
+    await checkForUpdate(); // 运行时检查新版本（失败静默，不阻塞主流程）
     if (argv.includes('-h') || argv.includes('--help')) {
       console.log(USAGE);
       return 0;
     }
     const opts = parseArgs(argv);
+    if (opts.command === 'self-update') return runSelfUpdate();
     const manifest = await loadManifest();
     if (opts.command === 'doctor') return runDoctor(manifest, opts.cn, (await detect()).platform);
     if (opts.command === 'list') return runList(manifest);
@@ -136,6 +146,35 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   } finally {
     await cleanupNpxCache(process.argv[1]); // 执行完毕自动清理 npx 缓存（保持下次拉最新版）
   }
+}
+
+/** 运行时检查 npm 最新版；有新版提示；网络异常静默（AI_STACK_SKIP_UPDATE_CHECK=1 可跳过） */
+async function checkForUpdate(): Promise<void> {
+  if (process.env.AI_STACK_SKIP_UPDATE_CHECK === '1') return;
+  try {
+    const r = await exec('npm view ai-stack-installer version', { timeout: 3000 });
+    if (r.code !== 0) return;
+    const latest = r.stdout.trim();
+    const current = packageVersion();
+    if (latest && latest !== current && !versionGte(current, latest)) {
+      await log(`发现新版本 v${latest}（当前 v${current}），运行 ai-stack self-update 升级`);
+    }
+  } catch {
+    /* 网络异常静默 */
+  }
+}
+
+/** self-update：清 npx 缓存（强制刷新）+ 全局安装最新版 */
+async function runSelfUpdate(): Promise<number> {
+  await cleanupNpxCache(process.argv[1]); // 强制刷新缓存，避免拉到旧版
+  await log('升级中：npm i -g ai-stack-installer@latest');
+  const r = await exec('npm i -g ai-stack-installer@latest');
+  if (r.code === 0) {
+    await ok('升级完成，请重新运行以使用新版本');
+    return 0;
+  }
+  await fail(`升级失败：${r.stderr.trim() || '(无错误输出)'}`);
+  return 1;
 }
 
 /** 从 package.json 读版本（dist/ 与 src/ 深度不同，向上查找） */

@@ -27,7 +27,7 @@ export async function ensurePwshIntegration(platform: Platform): Promise<PwshInt
     report.note = '未找到 pwsh（PowerShell 7 未安装），跳过集成';
     return report;
   }
-  report.pathFixed = await promoteInUserPath(pwshDir);
+  report.pathFixed = await promotePwshInPath(pwshDir);
   report.terminalDefaultSet = await setTerminalDefault();
   return report;
 }
@@ -41,26 +41,44 @@ async function findPwshDir(): Promise<string | null> {
   return src.replace(/\\pwsh\.exe$/i, '');
 }
 
-/** 用户 PATH 中把 pwsh 目录提到首位（不动系统 PATH，避免权限问题） */
-async function promoteInUserPath(pwshDir: string): Promise<boolean> {
-  const r = await exec('[Environment]::GetEnvironmentVariable("Path","User")');
-  const parts = (r.stdout.trim() || '').split(';').filter(Boolean);
+/**
+ * 把 pwsh 目录提升到**系统 PATH 首位**（Windows 解析顺序 = 系统 PATH 在前 + 用户 PATH 在后，
+ * MSI ADD_PATH=1 会把 pwsh 加入系统 PATH——只提升用户 PATH 竞争不过系统 PATH，必须提升系统级）。
+ * 写 Machine 环境变量需要管理员权限；无权限时降级提升用户 PATH 并提示。
+ */
+async function promotePwshInPath(pwshDir: string): Promise<boolean> {
   const norm = (p: string) => p.trim().replace(/\\+$/, '').toLowerCase();
   const target = norm(pwshDir);
-  const idx = parts.findIndex((p) => norm(p) === target);
-  if (idx === 0) {
-    await log(`PowerShell 7 已在用户 PATH 首位（${pwshDir}）`);
+  // 1. 尝试系统 PATH（主）
+  const r = await exec('[Environment]::GetEnvironmentVariable("Path","Machine")');
+  const sysParts = (r.stdout.trim() || '').split(';').filter(Boolean);
+  const sysIdx = sysParts.findIndex((p) => norm(p) === target);
+  if (sysIdx === 0) {
+    await log(`PowerShell 7 已在系统 PATH 首位（${pwshDir}）`);
     return false;
   }
-  if (idx > 0) parts.splice(idx, 1);
-  parts.unshift(pwshDir);
-  const escaped = parts.join(';').replace(/'/g, "''");
-  const w = await exec(`[Environment]::SetEnvironmentVariable("Path", '${escaped}', "User")`);
+  if (sysIdx > 0) sysParts.splice(sysIdx, 1);
+  sysParts.unshift(pwshDir);
+  const sysEscaped = sysParts.join(';').replace(/'/g, "''");
+  const w = await exec(`[Environment]::SetEnvironmentVariable("Path", '${sysEscaped}', "Machine")`);
   if (w.code === 0) {
-    await ok(`已将 PowerShell 7 提升到用户 PATH 首位（${pwshDir}），新终端生效`);
+    await ok(`已将 PowerShell 7 提升到系统 PATH 首位（${pwshDir}），新终端生效`);
     return true;
   }
-  await warn('PATH 提升失败（请检查是否以管理员权限运行）');
+  // 2. 无管理员权限：降级提升用户 PATH（对不在系统 PATH 的场景仍有效），并明确提示
+  await warn('提升系统 PATH 需要管理员权限（当前无权限），降级提升用户 PATH');
+  const ur = await exec('[Environment]::GetEnvironmentVariable("Path","User")');
+  const userParts = (ur.stdout.trim() || '').split(';').filter(Boolean);
+  const userIdx = userParts.findIndex((p) => norm(p) === target);
+  if (userIdx > 0) userParts.splice(userIdx, 1);
+  userParts.unshift(pwshDir);
+  const userEscaped = userParts.join(';').replace(/'/g, "''");
+  const uw = await exec(`[Environment]::SetEnvironmentVariable("Path", '${userEscaped}', "User")`);
+  if (uw.code === 0) {
+    await ok(`已将 PowerShell 7 提升到用户 PATH 首位（${pwshDir}）；如需系统级请以管理员身份运行`);
+    return true;
+  }
+  await warn('PATH 提升失败：请以管理员身份运行本脚本');
   return false;
 }
 

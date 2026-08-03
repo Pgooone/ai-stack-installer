@@ -126,6 +126,8 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     mocks.runUninstall.mockReset();
     mocks.detect.mockResolvedValue({ platform: 'linux', isWsl: false, arch: 'x64', home });
     mocks.detectTools.mockResolvedValue([]);
+    // 测试环境跳过运行时版本检查（避免真实 npm view 请求）
+    process.env.AI_STACK_SKIP_UPDATE_CHECK = '1';
     mocks.ensurePrereqs.mockResolvedValue({ failed: [] });
     mocks.installAgent.mockResolvedValue('ok');
     mocks.runDoctor.mockResolvedValue(0);
@@ -264,6 +266,34 @@ describe('main（各子命令分派与 install 编排，mock 模块注入 + 临�
     mocks.updatePrereqs.mockResolvedValue({ updated: [], failed: ['pwsh'], skipped: [] });
     const code = await main(['update']);
     expect(code).toBe(1);
+  });
+
+  it('self-update：清理 npx 缓存 + 全局安装最新版', async () => {
+    delete process.env.AI_STACK_SKIP_UPDATE_CHECK;
+    const calls: string[] = [];
+    vi.spyOn(utils, 'exec').mockImplementation(async (cmd: string) => {
+      calls.push(cmd);
+      if (cmd.includes('npm view')) return { code: 0, stdout: '0.4.6\n', stderr: '' };
+      if (cmd.includes('npm i -g ai-stack-installer@latest')) return { code: 0, stdout: '', stderr: '' };
+      return { code: 1, stdout: '', stderr: 'unexpected' };
+    });
+    const code = await main(['self-update']);
+    expect(code).toBe(0);
+    expect(calls).toContain('npm i -g ai-stack-installer@latest');
+  });
+
+  it('运行时检查：有新版本时提示升级', async () => {
+    delete process.env.AI_STACK_SKIP_UPDATE_CHECK;
+    vi.spyOn(utils, 'exec').mockImplementation(async (cmd: string) => {
+      if (cmd.includes('npm view')) return { code: 0, stdout: '99.0.0\n', stderr: '' };
+      return { code: 0, stdout: '', stderr: '' };
+    });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const code = await main(['list']);
+    expect(code).toBe(0);
+    const out = spy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('发现新版本 v99.0.0');
+    expect(out).toContain('self-update');
   });
 
   it('list 子命令：detectTools 输出清单', async () => {

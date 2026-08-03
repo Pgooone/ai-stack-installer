@@ -47,11 +47,11 @@ describe('ensurePwshIntegration（mock exec + 临时 LOCALAPPDATA）', () => {
     expect(r.note).toContain('未找到 pwsh');
   });
 
-  it('pwsh 已在用户 PATH 首位且终端已默认 pwsh：无改动（幂等）', async () => {
+  it('pwsh 已在系统 PATH 首位且终端已默认 pwsh：无改动（幂等）', async () => {
     const pwshDir = 'C:\\Program Files\\PowerShell\\7';
     setExecForTest(async (cmd) => {
       if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
-      if (cmd.includes('GetEnvironmentVariable("Path","User")'))
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
         return { code: 0, stdout: `${pwshDir};C:\\Windows\\system32\n`, stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
@@ -64,12 +64,12 @@ describe('ensurePwshIntegration（mock exec + 临时 LOCALAPPDATA）', () => {
     expect(r.terminalDefaultSet).toBe(false);
   });
 
-  it('pwsh 不在 PATH 首位：提升到首位并提示', async () => {
+  it('pwsh 不在系统 PATH 首位：提升到系统首位（Machine）', async () => {
     const pwshDir = 'C:\\Program Files\\PowerShell\\7';
     const writes: string[] = [];
     setExecForTest(async (cmd) => {
       if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
-      if (cmd.includes('GetEnvironmentVariable("Path","User")'))
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
         return { code: 0, stdout: `C:\\Windows\\system32;${pwshDir}\n`, stderr: '' };
       if (cmd.includes('SetEnvironmentVariable("Path"')) {
         writes.push(cmd);
@@ -79,9 +79,32 @@ describe('ensurePwshIntegration（mock exec + 临时 LOCALAPPDATA）', () => {
     });
     const r = await ensurePwshIntegration('windows');
     expect(r.pathFixed).toBe(true);
-    // 提升后的 PATH 以 pwsh 目录开头
-    const newPath = /SetEnvironmentVariable\("Path", '([^']+)'/.exec(writes[0])?.[1] ?? '';
+    // 提升后的 PATH 以 pwsh 目录开头，且写的是 Machine 级
+    const newPath = /SetEnvironmentVariable\("Path", '([^']+)', "Machine"\)/.exec(writes[0])?.[1] ?? '';
     expect(newPath.startsWith(pwshDir)).toBe(true);
+    expect(writes[0]).toContain('"Machine"');
+  });
+
+  it('无管理员权限（系统 PATH 写入失败）：降级提升用户 PATH 并提示', async () => {
+    const pwshDir = 'C:\\Program Files\\PowerShell\\7';
+    const writes: string[] = [];
+    setExecForTest(async (cmd) => {
+      if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
+        return { code: 0, stdout: `C:\\Windows\\system32;${pwshDir}\n`, stderr: '' };
+      if (cmd.includes('GetEnvironmentVariable("Path","User")'))
+        return { code: 0, stdout: `C:\\Windows\\system32\n`, stderr: '' };
+      if (cmd.includes('SetEnvironmentVariable("Path"')) {
+        writes.push(cmd);
+        // Machine 写失败（无权限），User 写成功
+        return { code: cmd.includes('"Machine"') ? 1 : 0, stdout: '', stderr: 'access denied' };
+      }
+      throw new Error(`不应执行：${cmd}`);
+    });
+    const r = await ensurePwshIntegration('windows');
+    expect(r.pathFixed).toBe(true); // 降级用户级成功
+    expect(writes.length).toBe(2); // Machine 失败 → User 重试
+    expect(writes[1]).toContain('"User"');
   });
 
   it('Windows Terminal 存在但 defaultProfile 未设 pwsh：修改 settings.json 保留注释', async () => {
@@ -95,7 +118,7 @@ describe('ensurePwshIntegration（mock exec + 临时 LOCALAPPDATA）', () => {
     );
     setExecForTest(async (cmd) => {
       if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
-      if (cmd.includes('GetEnvironmentVariable("Path","User")'))
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
         return { code: 0, stdout: `${pwshDir};C:\\Windows\\system32\n`, stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
@@ -110,7 +133,7 @@ describe('ensurePwshIntegration（mock exec + 临时 LOCALAPPDATA）', () => {
     const pwshDir = 'C:\\Program Files\\PowerShell\\7';
     setExecForTest(async (cmd) => {
       if (cmd.includes('Get-Command pwsh')) return { code: 0, stdout: `${pwshDir}\\pwsh.exe\n`, stderr: '' };
-      if (cmd.includes('GetEnvironmentVariable("Path","User")'))
+      if (cmd.includes('GetEnvironmentVariable("Path","Machine")'))
         return { code: 0, stdout: `${pwshDir};C:\\Windows\\system32\n`, stderr: '' };
       throw new Error(`不应执行：${cmd}`);
     });
