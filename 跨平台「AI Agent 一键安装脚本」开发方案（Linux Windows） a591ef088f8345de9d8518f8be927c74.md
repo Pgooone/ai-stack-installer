@@ -1,15 +1,26 @@
 # 跨平台「AI Agent 一键安装脚本」开发方案（Linux / Windows）
 
 > 目标：一条命令，在 Linux（含 WSL）和 Windows 上装好「开发三件套（运行时/终端/网络）」+「Agent 本体（Claude Code、Codex、Pi、OpenCode…）」+「统一配置注入」，并且可重复执行、可校验、可卸载。
-> 
+>
+> **v0.4.12+ 实战修订**（2026-08 云端 CentOS 7 实测）：本方案在**国内无代理 + 老系统（glibc<2.28）**环境
+> 落地时补充了以下关键设计——入口脚本需自带「国内直连装 Node」能力（fnm.vercel.app 在国内不可达、
+> 官方 Node 二进制在 CentOS 7 上跑不起来）；npm registry 无代理时**国内源（npmmirror）首选**；
+> npm 包 bin 入口必须独立（npx 软链调用下 argv 自检失效）；pwsh profile 只写 alias 不写编码设置。
+> 详见各节与「八、必须踩过的坑清单」。
 
 ## 一、先把问题拆清楚：一键脚本到底要做 5 件事
 
 1. **探测环境（detect）**：OS / 架构 / 是否 WSL / 已有 Node、Git、包管理器 / 是否需要代理。
 2. **装依赖（prereq，也就是你说的“三件套”）**：运行时（Node.js LTS + npm/pnpm）、版本控制与 Shell（Git、PowerShell 7 / bash）、辅助工具（ripgrep、jq、uv/Python 可选）。
+   - **Node 缺失时的安装链路必须自带国内直连兜底**：先试 fnm（海外环境）→ 失败后从 **npmmirror 直连下载 Node 二进制**（`registry.npmmirror.com/-/binary/node/`）；
+     老系统（glibc<2.28，如 CentOS 7）官方构建跑不起来，需自动改用 **unofficial-builds 的 glibc-217 兼容构建**
+     + 官方包的完整 npm 混搭（npm 是纯 JS，不依赖 glibc 版本）。
 3. **装 Agent 本体（agents）**：Claude Code、Codex、Pi、OpenCode、OpenClaw… 每个一个安装函数。
 4. **注入配置（configure）**：settings.json / config.toml / MCP 配置 / alias / 代理环境变量。
+   - **rc 文件只写 alias / 代理函数标记块**（幂等、可整体卸载）；**不写编码/编码转换设置**——用户反馈
+     强制 `$OutputEncoding` 类设置可能影响系统其他行为，脚本自身输出 UTF-8 即可。
 5. **自检与收尾（doctor）**：逐个 `--version`，输出一张结果表，失败项给修复建议。
+   - **CLI 必须支持 `--version`**：入口脚本用它探测「包是否拉取成功」，CLI 不认识该参数会误触发重试链。
 
 把这 5 步拆成 5 个函数，是这类脚本不烂尾的关键。不要写成一条几百行的线性脚本。
 
@@ -21,22 +32,22 @@
 
 ```
 ai-stack-installer/
-├── install.sh              # Linux/macOS/WSL 入口（POSIX sh 兼容）
-├── install.ps1             # Windows 入口（PowerShell 5.1+ 兼容写法）
+├── install.sh              # Linux/macOS/WSL 入口（POSIX sh 兼容，薄壳：装 Node + npx 拉起）
+├── install.ps1             # Windows 入口（PowerShell 5.1+ 兼容写法，职责同上）
+├── package.json            # npm 包元数据；bin 指向 dist/bin.js（独立入口，见下）
+├── src/                    # 核心逻辑（TypeScript，编译到 dist/）
+│   ├── bin.ts              # npm bin 独立入口：无条件调用 main（见坑 #8）
+│   ├── cli.ts              # 参数解析 / 子命令分派 / main / npx 缓存清理
+│   ├── manifest.ts         # 工具清单加载
+│   ├── agents.ts / prereq.ts / configure.ts / doctor.ts / ...
+├── dist/                   # tsc 产物（npm publish 只发这个 + manifest.json + config/）
 ├── manifest.json           # 所有工具的元数据：安装方式/检测命令/卸载命令
-├── lib/
-│   ├── common.sh           # 日志、重试、探测、幂等 helper
-│   └── common.ps1
-├── profiles/
-│   ├── minimal.json        # 只装 claude
-│   ├── full.json           # 全家桶
-│   └── cn.json             # 国内网络：走镜像 + 代理
-├── config/
-│   ├── claude.settings.json    # 模板（不含密钥）
-│   ├── codex.config.toml
-│   └── mcp.json
-└── doctor.sh / doctor.ps1
+└── config/                 # 配置模板
 ```
+
+> 入口脚本职责（v0.4.12+）：**装 Node ≥20（fnm → npmmirror 国内直连 → glibc-217 兜底）→
+> 选 npm registry（无代理国内首选 npmmirror）→ npx 拉起 npm 包 → 失败回退全局安装 → 自清理入口脚本**。
+> 安装逻辑全部在 npm 包内，入口保持薄壳，版本演进只需重拉包。
 
 ### manifest.json 的形状
 
@@ -45,6 +56,7 @@ ai-stack-installer/
   "prereq": [
     { "id": "node",  "check": "node -v",  "minVersion": "20",
       "linux": "curl -fsSL https://fnm.vercel.app/install | bash && fnm install --lts",
+      "linuxCn": "install_node_cn()：npmmirror 直连下载，glibc<2.28 用 glibc-217 构建 + 官方 npm 混搭",
       "windows": "winget install --id OpenJS.NodeJS.LTS -e --silent" },
     { "id": "git",   "check": "git --version",
       "linux": "sudo apt-get install -y git",
@@ -153,9 +165,11 @@ install_tool() {  # install_tool <bin> <主命令> <降级命令>
 # ---------- 3. prereq ----------
 has git || sudo apt-get update -y && sudo apt-get install -y git curl ripgrep jq
 if ! has node || [ "$(node -v | tr -d 'v' | cut -d. -f1)" -lt 20 ]; then
-  curl -fsSL https://fnm.vercel.app/install | bash
-  export PATH="$HOME/.local/share/fnm:$PATH"; eval "$(fnm env)"
-  fnm install --lts && fnm default lts-latest
+  # ① fnm（海外）→ ② npmmirror 直连（国内）→ ③ glibc-217 兼容构建（老系统）
+  # 关键：node 探测必须实际执行 `node -e` 验证能否运行，而非只看文件存在——
+  # 官方 Node ≥20 二进制要求 glibc≥2.28，CentOS 7（2.17）上装了也跑不起来
+  curl -fsSL https://fnm.vercel.app/install | bash && fnm install --lts 2>/dev/null \
+    || install_node_cn   # 函数内：npmmirror 下载 → 试跑 → 失败换 glibc-217 → PATH 前置 + 写 ~/.bashrc
 fi
 ok "node $(node -v) / npm $(npm -v)"
 
@@ -205,9 +219,9 @@ function Ok   ($m){ Write-Host "[v] $m" -ForegroundColor Green; Add-Content $log
 function Bad  ($m){ Write-Host "[x] $m" -ForegroundColor Red;   Add-Content $log "[x] $m" }
 function Has  ($c){ [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 
-# 0. UTF-8，避免中文乱码
+# 0. 脚本自身输出 UTF-8（避免中文乱码）；**不修改用户 $PROFILE 的编码设置**
+#    （v0.4.14 起移除 pwsh profile 的 UTF-8 强制写入——用户反馈怕影响系统其他行为）
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
-$OutputEncoding = [Text.Encoding]::UTF8
 
 # 1. 可选代理
 if ($env:USE_PROXY -eq '1') {
@@ -229,6 +243,12 @@ Ensure-Winget 'Microsoft.PowerShell' 'pwsh'
 # 刷新当前会话 PATH，否则刚装的命令找不到
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
             [Environment]::GetEnvironmentVariable('Path','User')
+
+# 2.5 npm registry：无代理 → npmmirror 首选（国内），失败回退官方；有代理 → 官方
+if (-not $env:http_proxy -and -not $env:HTTP_PROXY -and -not $env:https_proxy -and -not $env:HTTPS_PROXY) {
+  try { Invoke-WebRequest 'https://registry.npmmirror.com/-/ping' -TimeoutSec 5 -UseBasicParsing | Out-Null
+        $env:npm_config_registry = 'https://registry.npmmirror.com' } catch { }
+}
 
 # 3. agents
 function Install-Agent($bin, [scriptblock]$primary, $fallbackCmd) {
@@ -274,7 +294,7 @@ if (-not (Test-Path $settings)) {
 | Claude Code 项目配置 | `./.claude/`、`./.mcp.json` | 同左 | 随仓库走，脚本可选生成模板 |
 | Codex 配置 | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` | 登录用 `codex` 内 Sign in with ChatGPT 或 API Key |
 | Pi | 首次运行 `pi` 后用 `/login`，或预置 `ANTHROPIC_API_KEY` 等环境变量 | 同左 | 扩展包用 `pi install npm:... / git:...` |
-| Shell 别名 / 代理 | `~/.bashrc`、`~/.zshrc` | `$PROFILE`（pwsh 7） | 用标记块包裹，保证幂等 |
+| Shell 别名 / 代理 | `~/.bashrc`、`~/.zshrc` | `$PROFILE`（pwsh 7） | 用标记块包裹，保证幂等；**只写 alias / 代理函数，不写编码设置**（v0.4.14） |
 | 密钥 | `~/.ai-stack/.env`（chmod 600） | 用户环境变量或 DPAPI 加密文件 | **绝不写进仓库**，脚本只读取或交互式询问 |
 
 ---
@@ -300,7 +320,12 @@ iwr -useb .../install.ps1 -OutFile $env:TEMP\ai.ps1; & $env:TEMP\ai.ps1 -Profile
 ```
 
 > 管道执行拿不到命名参数，这是 PowerShell 的固定坑。要传参就「先下载再执行」，或者用环境变量传（`$env:USE_PROXY=1`）。
-> 
+
+### 国内获取入口脚本（已知痛点）
+
+`raw.githubusercontent.com` 在国内无代理时**不可达**，`curl -fsSL .../install.sh` 会直接挂掉。
+当前入口脚本的「下载即用」链路在国内需要镜像分发（gitee 镜像 / npm 包附带 / 对象存储），**尚未实现**，是已知待办。
+npm 包本身不受影响：`npx -y ai-stack-installer` 走 npmmirror 可达。
 
 ### 进阶：如果你想更省心
 
@@ -312,15 +337,28 @@ iwr -useb .../install.ps1 -OutFile $env:TEMP\ai.ps1; & $env:TEMP\ai.ps1 -Profile
 
 ## 八、必须踩过的坑清单
 
-- [ ]  **幂等**：任何一步都先 `check` 再装，重复执行不报错、不重复追加 rc 文件。
-- [ ]  **PATH 刷新**：Windows 上 winget 装完，当前会话 PATH 不会自动更新，必须手动重读。
-- [ ]  **执行策略**：`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`，或调用时带 `-ExecutionPolicy ByPass`。
-- [ ]  **中文乱码**：强制 UTF-8，推荐把 PowerShell 7 的路径提到 Path 首位。
-- [ ]  **权限**：Linux 不要整脚本 `sudo`，只在 `apt-get` 那几行用；npm 全局包避免 `sudo npm -g`（用 fnm/nvm 装 Node 就没这问题）。
-- [ ]  **网络**：国内环境给 `USE_PROXY` 开关 + npm 镜像开关（`npm config set registry`），但注意某些官方安装器直连 GitHub / [storage.googleapis.com](http://storage.googleapis.com)，镜像救不了，只能走代理。
-- [ ]  **失败不要 `set -e` 直接死**：单个 Agent 装失败应记录后继续，最后统一汇报，不要让第 3 个工具挂掉导致后面 5 个都没装。
-- [ ]  **卸载路径**：提供 `--uninstall`，每个工具在 manifest 里配好卸载命令。
-- [ ]  **版本锁**：支持 `claude@2.1.77` 这类固定版本，方便回退。
+> ✅ = 已在 v0.4.12+ 云端实测踩过并修复；○ = 仍需注意
+
+- [x] ✅ **Node 探测必须「实际运行验证」而非「看文件存在」**：nvm 里装着 node 24 但 CentOS 7（glibc 2.17）跑不起来（官方构建需 glibc≥2.28）——`node -v` 直接报 `GLIBC_2.28 not found`。脚本里 `node -e` 验证失败即视为无 node。
+- [x] ✅ **fnm.vercel.app 国内不可达**（TCP reset）——Node 缺失时唯一自愈路径会死路。必须带国内直连兜底：npmmirror 下载官方构建 → 试跑失败 → **unofficial-builds glibc-217 兼容构建**（`registry.npmmirror.com/-/binary/node-unofficial-builds/`）。
+- [x] ✅ **glibc-217 构建包不带 npm**（bin/npm 是悬空软链）——需混搭：glibc-217 的 node 二进制 + 官方包的 `lib/node_modules/npm`（npm 纯 JS 不依赖 glibc）。
+- [x] ✅ **官方 node 包 bin/npm 是符号链接** → 重写入口前必须 `rm -f` 删软链，否则 `>` 重定向**跟随软链覆盖 npm-cli.js**（变成自引用包装 → npm 静默失效、rc=0 无输出）。
+- [x] ✅ **npx 执行链路**：npx 经 `_npx/<hash>/node_modules/.bin/` 软链调用 bin，`process.argv[1]` 是软链路径——**bin 若指向 cli.js，其 `argv[1] === import.meta.url` 自检永远不成立，main 不执行 = CLI 完全静默**。必须用独立 bin 入口（dist/bin.js）无条件调用 main，且**带 shebang**（无 shebang → execve ENOEXEC → bash 解析 JS 报语法错）。
+- [x] ✅ **npx 缓存清理路径深度**：argv[1] 是 `.bin` 软链路径时「上溯 N 层」会误删 `_npx` 根目录，破坏 npm 缓存——按 `_npx/<hash>` 段解析。
+- [x] ✅ **入口脚本函数内 log 会污染 `$(...)` 捕获值**：`REGISTRY=$(pick_registry)` 若函数内 log（tee 写 stdout）会把日志混进变量（多行垃圾 → 分支判断全乱）——日志必须走 stderr。
+- [x] ✅ **CLI 必须支持 `--version`**：入口脚本以它探测拉包是否成功；不认识会报「未知参数」rc=1 → 误触发「切源重试 → 全局安装」重试链。
+- [x] ✅ **npm registry 无代理时国内首选 npmmirror**（v0.4.12 起反转）：官方源 `/-/ping` 可达 ≠ 下载可达（假阳性），国内直连 npmmirror 更稳；拉包失败再自动切另一源重试。
+- [x] ✅ **CentOS 7 EOL 后 yum mirrorlist 失效**（`mirrorlist.centos.org` 解析失败）——换 vault 源：**阿里主 + 清华备份**（base/extras/updates/sclo-rh），EPEL 用阿里 + 华为云备份；`gpgkey` 用本地文件；SCLo 冻结源无 key 时 gpgcheck=0。
+- [x] ✅ **pwsh profile 不写编码设置**（v0.4.14）：强制 `$OutputEncoding` 类设置可能影响用户系统，只写 alias / 代理函数标记块；脚本自身输出 UTF-8 即可。
+- [x] ✅ **入口脚本自清理**：执行完删自身（保持下次拿最新版），`AI_STACK_KEEP=1` 保留；npx 缓存由 CLI 执行完自动清理。
+- [ ] ○ **幂等**：任何一步都先 `check` 再装，重复执行不报错、不重复追加 rc 文件（PATH 写入用 grep 判重）。
+- [ ] ○ **PATH 刷新**：Windows 上 winget 装完，当前会话 PATH 不会自动更新，必须手动重读 Machine+User。
+- [ ] ○ **执行策略**：`Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`，或调用时带 `-ExecutionPolicy ByPass`。
+- [ ] ○ **权限**：Linux 不要整脚本 `sudo`，只在系统包那几行用；npm 全局包避免 `sudo npm -g`（用 fnm/nvm 装 Node 就没这问题）。**注意**：README 里写的 sudo 白名单可能过时——实测 CS03 实际是 `(ALL) ALL` 免密，以 `sudo -l` 实际输出为准。
+- [ ] ○ **网络**：`needsProxy` 工具（Claude Code / Codex 官方安装器）直连海外，**镜像救不了，只能走代理**；入口脚本本身在 `raw.githubusercontent.com` 不可达的国内网络需要镜像分发（已知待办）。
+- [ ] ○ **失败不要 `set -e` 直接死**：单个 Agent 装失败应记录后继续，最后统一汇报。
+- [ ] ○ **卸载路径**：提供 `uninstall`，每个工具在 manifest 里配好卸载命令。
+- [ ] ○ **版本锁**：支持 `claude@2.1.77` 这类固定版本，方便回退。
 
 ---
 
@@ -328,4 +366,8 @@ iwr -useb .../install.ps1 -OutFile $env:TEMP\ai.ps1; & $env:TEMP\ai.ps1 -Profile
 
 1. **Day 1**：只做 Linux + Claude Code 一个工具，把 `log/retry/has/install_tool/doctor` 五个 helper 打磨好。
 2. **Day 2**：抽出 manifest.json，把 Codex / Pi / OpenCode 用数据的方式加进来（此时脚本逻辑应该一行不改）。
-3. **Day 3**：写 [install.ps](http://install.ps)1 对齐同一份 manifest，加 GitHub Actions 双平台冒烟测试，补 `--uninstall` 和 `--profile`。
+3. **Day 3**：写 [install.ps](http://install.ps)1 对齐同一份 manifest，加 GitHub Actions 双平台冒烟测试，补 `uninstall` 和 `--profile`。
+
+> **v0.4.12+ 补充**：Day 2.5 建议在**国内无代理的老系统（如 CentOS 7 云主机）上真机跑一遍入口脚本**——
+> fnm 不可达、glibc 不兼容、npx 静默、软链覆盖 npm 这些坑全部只在真实环境暴露，本地模拟测不出来。
+> 验证清单：干净环境（`env -i`）装 Node 全链路 → npm registry 首选 npmmirror → npx 拉包输出版本号 → 幂等重跑 npm 仍正常。
