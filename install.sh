@@ -10,6 +10,80 @@ mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 log() { printf '[install.sh] %s\n' "$*" | tee -a "$LOG_FILE"; }
 
+# 国内直连安装 Node（npmmirror 镜像，兼容无代理环境）
+# 流程：取 unofficial-builds 最新 LTS 版本（保证官方包与 glibc-217 构建版本一致）
+#      → 官方包试跑（现代系统直接用）→ 失败（glibc<2.28 老系统）→ glibc-217 构建 + 官方包 npm 混搭
+# 成功后 node_ok=true 且新 node 的 bin 已前置到 PATH
+install_node_cn() {
+  local major=22
+  local base="$HOME/.ai-stack/node"
+  local mirror="https://registry.npmmirror.com/-/binary"
+  local tmp="$base/.tmp"
+  mkdir -p "$base" "$tmp"
+
+  log "国内直连：从 npmmirror 获取 Node v${major} LTS 最新版..."
+  local ver
+  ver=$(curl -fsSL --max-time 15 "$mirror/node-unofficial-builds/index.json" 2>/dev/null |
+    grep -oE "v${major}\.[0-9]+\.[0-9]+" | sort -uV | tail -1)
+  [ -z "$ver" ] && { log "错误：npmmirror 版本信息不可用"; return 1; }
+  log "目标版本：$ver"
+
+  # 1. 官方构建（含完整 npm）
+  local dest="$base/$ver"
+  if [ ! -x "$dest/bin/node" ]; then
+    log "下载官方构建：node-$ver-linux-x64.tar.xz"
+    curl -fsSL --max-time 300 -o "$tmp/official.tar.xz" "$mirror/node/$ver/node-$ver-linux-x64.tar.xz" || { log "错误：官方构建下载失败"; return 1; }
+    tar -xJf "$tmp/official.tar.xz" -C "$base" || { log "错误：解压失败"; return 1; }
+    mv "$base/node-$ver-linux-x64" "$dest"
+  fi
+
+  local bin_dir="$dest/bin"
+  if ! "$dest/bin/node" -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)" >/dev/null 2>&1; then
+    # 官方构建跑不起来：glibc 过旧，改用官方 glibc-217 兼容构建（CentOS 7 等）
+    log "官方构建需 glibc≥2.28，当前系统过旧，改用 glibc-217 兼容构建"
+    local g217="$base/$ver-glibc217"
+    if [ ! -x "$g217/bin/node" ]; then
+      curl -fsSL --max-time 300 -o "$tmp/glibc217.tar.xz" \
+        "$mirror/node-unofficial-builds/$ver/node-$ver-linux-x64-glibc-217.tar.xz" || {
+          log "错误：glibc-217 构建下载失败（$ver 未在 unofficial-builds 发布）"
+          return 1
+        }
+      tar -xJf "$tmp/glibc217.tar.xz" -C "$base" || { log "错误：glibc-217 解压失败"; return 1; }
+      mv "$base/node-$ver-linux-x64-glibc-217" "$g217"
+    fi
+    # 混搭：glibc-217 的 node 二进制 + 官方包的完整 npm（npm 纯 JS，不依赖 glibc 版本）
+    mkdir -p "$g217/lib/node_modules"
+    cp -r "$dest/lib/node_modules/npm" "$g217/lib/node_modules/"
+    # 官方包的 bin/npm、bin/npx 是软链（指向 lib/node_modules/npm/bin/*-cli.js），
+    # 重写前必须删除软链本身，否则 > 重定向会跟随软链覆盖 npm-cli.js，导致 npm 静默失效
+    rm -f "$g217/bin/npm" "$g217/bin/npx"
+    {
+      echo '#!/usr/bin/env node'
+      echo "require('$g217/lib/node_modules/npm/bin/npm-cli.js')"
+    } > "$g217/bin/npm"
+    {
+      echo '#!/usr/bin/env node'
+      echo "require('$g217/lib/node_modules/npm/bin/npx-cli.js')"
+    } > "$g217/bin/npx"
+    chmod +x "$g217/bin/npm" "$g217/bin/npx"
+    bin_dir="$g217/bin"
+  fi
+
+  if ! "$bin_dir/node" -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)" >/dev/null 2>&1; then
+    log "错误：Node 安装后仍无法运行"
+    return 1
+  fi
+  export PATH="$bin_dir:$PATH"
+  node_ok=true
+  log "Node 已就绪：$("$bin_dir/node" -v)（$bin_dir）"
+
+  # 持久化：幂等追加到 ~/.bashrc，新开终端可直接用 node/npm
+  if [ -f "$HOME/.bashrc" ] && ! grep -qF "$bin_dir" "$HOME/.bashrc" 2>/dev/null; then
+    echo "export PATH=\"$bin_dir:\$PATH\"" >> "$HOME/.bashrc"
+    log "已追加 PATH 到 ~/.bashrc（新开终端生效）"
+  fi
+}
+
 log "开始执行（参数：$*）"
 
 # 1. 探测 node（≥20 才可用）
@@ -49,7 +123,12 @@ if [ "$node_ok" = false ]; then
 fi
 
 if [ "$node_ok" = false ]; then
-  log "错误：未找到 Node ≥20（fnm 安装失败，国内环境请设置代理后重试，"
+  # 国内直连兜底：无代理/老系统（glibc<2.28）环境自动装 Node（npmmirror + glibc-217 构建）
+  install_node_cn
+fi
+
+if [ "$node_ok" = false ]; then
+  log "错误：未找到可用的 Node ≥20（fnm 与国内镜像均失败，请检查网络后重试，"
   log "      或手动安装 Node.js ≥20 后重新运行本脚本）"
   exit 1
 fi

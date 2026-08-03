@@ -196,9 +196,12 @@ function packageVersion(): string {
 export async function cleanupNpxCache(entry: string | undefined): Promise<void> {
   if (!entry) return;
   const norm = entry.replace(/\\/g, '/');
-  if (!norm.includes('/_npx/')) return; // 非 npx 缓存运行（本地 dist / 全局安装）不清理
-  // entry = .../_npx/<hash>/node_modules/ai-stack-installer/dist/cli.js → 上溯 4 层到 <hash>
-  const cacheDir = dirname(dirname(dirname(dirname(entry))));
+  const idx = norm.indexOf('/_npx/');
+  if (idx === -1) return; // 非 npx 缓存运行（本地 dist / 全局安装）不清理
+  // entry = .../_npx/<hash>/...（cli.js 直跑或 .bin 软链路径，深度不定）→ 取 _npx/<hash> 段
+  const hash = norm.slice(idx + '/_npx/'.length).split('/')[0];
+  if (!hash) return;
+  const cacheDir = `${norm.slice(0, idx)}/_npx/${hash}`;
   try {
     await rm(cacheDir, { recursive: true, force: true });
     await log(`已清理 npx 缓存（${cacheDir}），下次将拉取最新版`);

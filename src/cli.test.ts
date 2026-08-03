@@ -355,13 +355,26 @@ describe('cleanupNpxCache（执行完毕自动清理，保持下次拉最新版�
     await rm(tmpRoot, { recursive: true, force: true });
   });
 
-  it('从 npx 缓存运行：删除整个 <hash> 缓存目录', async () => {
+  it('从 npx 缓存运行（cli.js 直跑）：删除整个 <hash> 缓存目录', async () => {
     // 模拟 .../_npx/<hash>/node_modules/ai-stack-installer/dist/cli.js
     const pkgDir = join(tmpRoot, '_npx', 'abc123', 'node_modules', 'ai-stack-installer');
     await mkdir(join(pkgDir, 'dist'), { recursive: true });
     await cleanupNpxCache(join(pkgDir, 'dist', 'cli.js'));
     // <hash> 目录整个被删除
     await expect(rm(join(tmpRoot, '_npx', 'abc123'), { recursive: true, force: false })).rejects.toThrow();
+  });
+
+  it('从 npx 缓存运行（.bin 软链入口）：只删 <hash>，不误删 _npx 根', async () => {
+    // 模拟 .../_npx/<hash>/node_modules/.bin/ai-stack（bin 指向 dist/bin.js 时 argv[1] 为软链路径）
+    const binDir = join(tmpRoot, '_npx', 'def456', 'node_modules', '.bin');
+    await mkdir(binDir, { recursive: true });
+    const sentinel = join(tmpRoot, '_npx', 'keep.txt');
+    await writeFile(sentinel, 'keep');
+    await cleanupNpxCache(join(binDir, 'ai-stack'));
+    // 只删除 <hash> 目录
+    await expect(rm(join(tmpRoot, '_npx', 'def456'), { recursive: true, force: false })).rejects.toThrow();
+    // _npx 根与哨兵文件保留，未被误删
+    await expect(readFile(sentinel, 'utf8')).resolves.toBe('keep');
   });
 
   it('非 npx 缓存路径（本地 dist / 全局安装）：不清理', async () => {
