@@ -195,7 +195,13 @@ fi
 # 3. 透明性提示
 log "卸载请运行：ai-stack uninstall"
 # 4. 执行完毕自动清理本入口脚本（保持下次使用最新版）；AI_STACK_KEEP=1 可保留
-if [ "${AI_STACK_KEEP:-0}" != "1" ] && [ -f "$0" ]; then
+#    仅当 $0 是真实脚本文件时清理——管道模式（curl | bash）下 $0 是 shell 自身，不能删
+script_real=false
+case "$0" in
+  *bash|*sh|*dash) ;;
+  *) [ -f "$0" ] && script_real=true ;;
+esac
+if [ "${AI_STACK_KEEP:-0}" != "1" ] && [ "$script_real" = true ]; then
   rm -f "$0" 2>/dev/null
   log "已清理入口脚本 $0（设置 AI_STACK_KEEP=1 可保留）"
 fi

@@ -8,19 +8,40 @@
 
 ```bash
 # Linux / macOS / WSL
+# 一行管道安装（无交互，默认直装；无 Node 时自动安装 Node）
+curl -fsSL https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/install.sh | bash
+
+# 或下载后运行（交互向导：功能选择 / 工具 / 网络 / CC Switch）
 curl -fsSL https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/install.sh -o install.sh
-bash install.sh          # 交互向导：功能选择 / 工具 / 网络 / CC Switch
+bash install.sh          # 交互向导
 bash install.sh -y       # 跳过向导，直接安装（默认全量工具）
 ```
 
 ```powershell
 # Windows PowerShell
+# 一行管道安装（无交互，默认直装；无 Node 时自动安装 Node）
+irm https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/install.ps1 | iex
+
+# 或下载后运行（交互向导）
 iwr -useb https://raw.githubusercontent.com/Pgooone/ai-stack-installer/main/install.ps1 -OutFile install.ps1
 .\install.ps1            # 交互向导
 .\install.ps1 -y         # 跳过向导，直接安装
 ```
 
 > 入口脚本只负责「装 Node ≥20 + 拉起 npm 包」，安装逻辑在 `ai-stack-installer` 包内。
+
+<details>
+<summary>Already have Node.js? Use npm instead（已有 Node.js？直接用 npm 安装，适用于任何版本 ≥20）</summary>
+
+```bash
+# 全局安装（提供 ai-stack 命令）
+npm i -g ai-stack-installer
+
+# 或直接运行（无需安装）
+npx -y ai-stack-installer@latest install
+```
+
+</details>
 >
 > **国内网络自动适配（无代理时国内源首选）**：无代理环境（国内常见）默认使用
 > **npmmirror 镜像**拉取核心包（避免官方源 ping 通但下载被墙的假阳性），失败自动切官方源重试；
@@ -72,7 +93,8 @@ MSI 下载失败时自动降级 winget。需代理访问 GitHub Releases。
 安装/更新 PowerShell 后脚本自动执行（幂等）：
 - 把 PowerShell 7 路径（`C:\Program Files\PowerShell\7`）提升到**用户 PATH 首位**——确保新终端默认调用 pwsh 7 而非旧版
 - 若安装了 Windows Terminal，将其 `defaultProfile` 设为 PowerShell 7（保留你已有的配置与注释）
-- pwsh profile 写入 alias（`c` = claude）与 proxy_on/off 函数（标记块，可安全卸载）
+- **不修改用户的 PowerShell profile**（v0.4.15 起）——你完全掌控自己的 profile；卸载时仅清理旧版本（≤0.4.14）历史写入的标记块
+- Linux/macOS 的 `~/.bashrc` 写入 alias（`c` = claude）与 proxy_on/off 函数（标记块，可安全卸载）
 
 ## 升级与清缓存
 

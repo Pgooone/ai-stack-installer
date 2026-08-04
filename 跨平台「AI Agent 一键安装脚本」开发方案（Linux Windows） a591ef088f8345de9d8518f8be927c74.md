@@ -5,7 +5,8 @@
 > **v0.4.12+ 实战修订**（2026-08 云端 CentOS 7 实测）：本方案在**国内无代理 + 老系统（glibc<2.28）**环境
 > 落地时补充了以下关键设计——入口脚本需自带「国内直连装 Node」能力（fnm.vercel.app 在国内不可达、
 > 官方 Node 二进制在 CentOS 7 上跑不起来）；npm registry 无代理时**国内源（npmmirror）首选**；
-> npm 包 bin 入口必须独立（npx 软链调用下 argv 自检失效）；pwsh profile 只写 alias 不写编码设置。
+> npm 包 bin 入口必须独立（npx 软链调用下 argv 自检失效）；**完全不动用户的 pwsh profile**
+> （v0.4.14 移除编码设置 → v0.4.15 连 alias 也不写，用户可完全掌控）。
 > 详见各节与「八、必须踩过的坑清单」。
 
 ## 一、先把问题拆清楚：一键脚本到底要做 5 件事
@@ -17,8 +18,10 @@
      + 官方包的完整 npm 混搭（npm 是纯 JS，不依赖 glibc 版本）。
 3. **装 Agent 本体（agents）**：Claude Code、Codex、Pi、OpenCode、OpenClaw… 每个一个安装函数。
 4. **注入配置（configure）**：settings.json / config.toml / MCP 配置 / alias / 代理环境变量。
-   - **rc 文件只写 alias / 代理函数标记块**（幂等、可整体卸载）；**不写编码/编码转换设置**——用户反馈
-     强制 `$OutputEncoding` 类设置可能影响系统其他行为，脚本自身输出 UTF-8 即可。
+   - **Linux/macOS**：`~/.bashrc` 写 alias / 代理函数标记块（幂等、可整体卸载）。
+   - **Windows：完全不动用户 pwsh profile**（v0.4.15 起，连 alias 也不写）——用户可能不知道如何
+     修改/删除脚本写入的内容；脚本自身输出 UTF-8 即可。旧版本（≤0.4.14）残留的标记块由
+     卸载时清理。
 5. **自检与收尾（doctor）**：逐个 `--version`，输出一张结果表，失败项给修复建议。
    - **CLI 必须支持 `--version`**：入口脚本用它探测「包是否拉取成功」，CLI 不认识该参数会误触发重试链。
 
@@ -219,8 +222,8 @@ function Ok   ($m){ Write-Host "[v] $m" -ForegroundColor Green; Add-Content $log
 function Bad  ($m){ Write-Host "[x] $m" -ForegroundColor Red;   Add-Content $log "[x] $m" }
 function Has  ($c){ [bool](Get-Command $c -ErrorAction SilentlyContinue) }
 
-# 0. 脚本自身输出 UTF-8（避免中文乱码）；**不修改用户 $PROFILE 的编码设置**
-#    （v0.4.14 起移除 pwsh profile 的 UTF-8 强制写入——用户反馈怕影响系统其他行为）
+# 0. 脚本自身输出 UTF-8（避免中文乱码）；**完全不动用户 $PROFILE**
+#    （v0.4.14 移除编码写入 → v0.4.15 连 alias/代理函数也不写——用户可完全掌控自己的 profile）
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 # 1. 可选代理
@@ -294,7 +297,7 @@ if (-not (Test-Path $settings)) {
 | Claude Code 项目配置 | `./.claude/`、`./.mcp.json` | 同左 | 随仓库走，脚本可选生成模板 |
 | Codex 配置 | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` | 登录用 `codex` 内 Sign in with ChatGPT 或 API Key |
 | Pi | 首次运行 `pi` 后用 `/login`，或预置 `ANTHROPIC_API_KEY` 等环境变量 | 同左 | 扩展包用 `pi install npm:... / git:...` |
-| Shell 别名 / 代理 | `~/.bashrc`、`~/.zshrc` | `$PROFILE`（pwsh 7） | 用标记块包裹，保证幂等；**只写 alias / 代理函数，不写编码设置**（v0.4.14） |
+| Shell 别名 / 代理 | `~/.bashrc`、`~/.zshrc` | **不修改**（v0.4.15） | 标记块包裹、幂等；Windows 完全不碰用户 profile，卸载仅清理旧版残留 |
 | 密钥 | `~/.ai-stack/.env`（chmod 600） | 用户环境变量或 DPAPI 加密文件 | **绝不写进仓库**，脚本只读取或交互式询问 |
 
 ---
@@ -349,7 +352,7 @@ npm 包本身不受影响：`npx -y ai-stack-installer` 走 npmmirror 可达。
 - [x] ✅ **CLI 必须支持 `--version`**：入口脚本以它探测拉包是否成功；不认识会报「未知参数」rc=1 → 误触发「切源重试 → 全局安装」重试链。
 - [x] ✅ **npm registry 无代理时国内首选 npmmirror**（v0.4.12 起反转）：官方源 `/-/ping` 可达 ≠ 下载可达（假阳性），国内直连 npmmirror 更稳；拉包失败再自动切另一源重试。
 - [x] ✅ **CentOS 7 EOL 后 yum mirrorlist 失效**（`mirrorlist.centos.org` 解析失败）——换 vault 源：**阿里主 + 清华备份**（base/extras/updates/sclo-rh），EPEL 用阿里 + 华为云备份；`gpgkey` 用本地文件；SCLo 冻结源无 key 时 gpgcheck=0。
-- [x] ✅ **pwsh profile 不写编码设置**（v0.4.14）：强制 `$OutputEncoding` 类设置可能影响用户系统，只写 alias / 代理函数标记块；脚本自身输出 UTF-8 即可。
+- [x] ✅ **Windows 完全不动用户 pwsh profile**（v0.4.14 移除编码设置 → v0.4.15 连 alias 也不写）：用户可能不知道如何修改/删除脚本写入的内容；脚本自身输出 UTF-8 即可，卸载时仅清理旧版本残留的标记块。
 - [x] ✅ **入口脚本自清理**：执行完删自身（保持下次拿最新版），`AI_STACK_KEEP=1` 保留；npx 缓存由 CLI 执行完自动清理。
 - [ ] ○ **幂等**：任何一步都先 `check` 再装，重复执行不报错、不重复追加 rc 文件（PATH 写入用 grep 判重）。
 - [ ] ○ **PATH 刷新**：Windows 上 winget 装完，当前会话 PATH 不会自动更新，必须手动重读 Machine+User。
