@@ -115,15 +115,12 @@ describe('writeAliasBlock（标记块幂等）', () => {
     expect(after.match(/ai-stack/g)).toHaveLength(2); // 仅起止两个标记，未重复追加
   });
 
-  it('windows：写入 $PROFILE（Profile.CurrentUserAllHosts），内容用 PowerShell 语法', async () => {
+  it('windows：不修改 $PROFILE（v0.4.15 起跳过，用户可完全掌控自己的 profile）', async () => {
     const r = await writeAliasBlock('windows', home);
     expect(r.rcFile).toBe(join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'));
-    expect(r.action).toBe('written');
-    const content = await readFile(r.rcFile, 'utf8');
-    expect(content).toContain(markers.start);
-    expect(content).toContain('Set-Alias -Name c -Value claude');
-    expect(content).toContain('function proxy_on');
-    expect(content).toContain('$env:http_proxy');
+    expect(r.action).toBe('skipped');
+    // 不创建目录、不写任何文件
+    await expect(readFile(r.rcFile, 'utf8')).rejects.toThrow();
   });
 
   it('已有 rc 内容（无标记块）时追加而非覆盖', async () => {
@@ -226,10 +223,11 @@ describe('collectFileReport', () => {
     expect(report[2].desc).toContain('别名');
   });
 
-  it('windows 平台 rc 文件为 Profile 路径', async () => {
+  it('windows 平台：报告不含 rc 文件（不修改用户 profile）', async () => {
     const report = await collectFileReport('windows', 'C:\\Users\\tester');
-    expect(report[2].path).toBe(
-      join('C:\\Users\\tester', 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
-    );
+    expect(report.map((f) => f.path)).toEqual([
+      join('C:\\Users\\tester', '.claude', 'settings.json'),
+      join('C:\\Users\\tester', '.codex', 'config.toml'),
+    ]);
   });
 });

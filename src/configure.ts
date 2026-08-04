@@ -83,38 +83,33 @@ export function rcFileFor(platform: Platform, home: string = os.homedir()): stri
   return join(home, '.bashrc');
 }
 
-/** 标记块内容：linux/macos 用 bash 语法，windows 用 PowerShell 语法（$PROFILE） */
-function aliasBlock(platform: Platform): string {
-  const body =
-    platform === 'windows'
-      ? [
-          "Set-Alias -Name c -Value claude",
-          'function proxy_on {',
-          "  $env:http_proxy = 'http://127.0.0.1:7890'",
-          "  $env:https_proxy = 'http://127.0.0.1:7890'",
-          '}',
-          'function proxy_off {',
-          '  Remove-Item Env:http_proxy -ErrorAction SilentlyContinue',
-          '  Remove-Item Env:https_proxy -ErrorAction SilentlyContinue',
-          '}',
-        ]
-      : [
-          "alias c='claude'",
-          'proxy_on() {',
-          '  export http_proxy=http://127.0.0.1:7890',
-          '  export https_proxy=http://127.0.0.1:7890',
-          '}',
-          'proxy_off() {',
-          '  unset http_proxy',
-          '  unset https_proxy',
-          '}',
-        ];
+/** 标记块内容（bash 语法，用于 linux/macos 的 ~/.bashrc） */
+function aliasBlock(): string {
+  const body = [
+    "alias c='claude'",
+    'proxy_on() {',
+    '  export http_proxy=http://127.0.0.1:7890',
+    '  export https_proxy=http://127.0.0.1:7890',
+    '}',
+    'proxy_off() {',
+    '  unset http_proxy',
+    '  unset https_proxy',
+    '}',
+  ];
   return `${markers.start}\n${body.join('\n')}\n${markers.end}`;
 }
 
-/** 幂等写入别名/代理标记块：已有标记块跳过；rc 文件不存在则创建 */
+/**
+ * 幂等写入别名/代理标记块（仅 linux/macos 的 ~/.bashrc）。
+ * Windows 一律跳过（v0.4.15 起）：不修改用户 $PROFILE——用户可能不知道如何
+ * 修改/删除脚本写入的内容。旧版本残留的标记块由 removeAliasBlock 在卸载时清理。
+ */
 export async function writeAliasBlock(platform: Platform, home = os.homedir()): Promise<AliasResult> {
   const rcFile = rcFileFor(platform, home);
+  if (platform === 'windows') {
+    await log('Windows：不修改用户 PowerShell profile（跳过 alias/代理标记块）');
+    return { rcFile, action: 'skipped' };
+  }
   let content: string;
   try {
     content = await readFile(rcFile, 'utf8');
@@ -124,7 +119,7 @@ export async function writeAliasBlock(platform: Platform, home = os.homedir()): 
   if (content.includes(markers.start)) {
     return { rcFile, action: 'exists' };
   }
-  const block = aliasBlock(platform);
+  const block = aliasBlock();
   const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
   try {
     await mkdir(dirname(rcFile), { recursive: true });
@@ -137,12 +132,13 @@ export async function writeAliasBlock(platform: Platform, home = os.homedir()): 
   }
 }
 
-/** 透明性报告：本脚本写入的配置文件位置清单 */
+/** 透明性报告：本脚本写入的配置文件位置清单（Windows 不含 rc：不修改用户 profile） */
 export async function collectFileReport(platform: Platform, home = os.homedir()): Promise<FileReport[]> {
-  return [
-    ...configFiles(home).map((cf) => ({ path: cf.path, desc: `配置模板 ${cf.template} 生成` })),
-    { path: rcFileFor(platform, home), desc: 'shell 别名/代理函数标记块' },
-  ];
+  const report: FileReport[] = configFiles(home).map((cf) => ({ path: cf.path, desc: `配置模板 ${cf.template} 生成` }));
+  if (platform !== 'windows') {
+    report.push({ path: rcFileFor(platform, home), desc: 'shell 别名/代理函数标记块' });
+  }
+  return report;
 }
 
 /** 输出文件位置清单（透明性：每处写入位置 + 清理方式提示） */
